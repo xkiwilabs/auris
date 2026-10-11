@@ -6,8 +6,8 @@ from pathlib import Path
 import soundfile as sf
 import typer
 
-from auris.audio import io
-from auris.audio.transcribe import transcribe_audio
+from auris.audio import io, reference
+from auris.audio.transcribe import transcribe_reference
 from auris.client.api import ClientError
 from auris.client.mode import remote_client
 from auris.config import load_settings
@@ -28,14 +28,18 @@ async def _clone(
             f"reference audio must be at least {MIN_CLIP_SECONDS:.0f} seconds (got {seconds:.1f}s)"
         )
 
-    audio = io.prepare_reference(
-        audio, settings.sample_rate
-    )  # trim + cap to ≤10s (safely under f5-TTS's ~12s limit)
-    seconds = io.duration_s(audio, settings.sample_rate)
+    decoded = None
     if ref_text is None:
-        ref_text = transcribe_audio(audio, settings.sample_rate, model=asr_model)
-        if not ref_text.strip():
-            raise ValueError("no speech detected in the reference audio")
+        window = reference.decode_window(audio, settings.sample_rate)
+        decoded = transcribe_reference(window, settings.sample_rate, model=asr_model)
+    # Trim + cap to ≤10 s, cut inside a pause (see auris/audio/reference.py for why).
+    clip = reference.reference_for_clone(
+        audio, settings.sample_rate, ref_text=ref_text, decoded=decoded
+    )
+    audio, ref_text = clip.audio, clip.transcript
+    seconds = io.duration_s(audio, settings.sample_rate)
+    for warning in clip.warnings:
+        typer.echo(f"note: {warning}", err=True)
 
     conn = await db.connect(settings.db_path)
     try:
@@ -79,6 +83,8 @@ def clone(
             typer.echo(str(exc), err=True)
             raise typer.Exit(code=1)
         typer.echo(f'Cloned {res["voice"]}: clip {res["clip_index"]} ("{res["transcript"]}")')
+        for warning in res.get("warnings", []):
+            typer.echo(f"note: {warning}", err=True)
         return
     try:
         name, index = asyncio.run(_clone(speaker, ref, ref_text, asr_model))

@@ -146,8 +146,10 @@
           </label>
           <div id="vc-player" hidden></div>
           <audio id="vc-audio"></audio>
+          <audio id="clip-audio" preload="none"></audio>
           <div id="voice-card-body"></div>
           <div id="vc-msg" class="msg"></div>
+          <ul id="vc-warnings" class="msg warn" hidden></ul>
         </aside>
         <div id="voice-backdrop" class="sheet-backdrop"></div>
       </div>
@@ -391,7 +393,7 @@
 
     </main>
   </div>
-  <dialog id="new-voice" class="modal wide" aria-labelledby="nv-title">
+  <dialog id="new-voice" class="modal xwide" aria-labelledby="nv-title">
     <form id="clone-form" autocomplete="off">
       <div class="card-head">
         <h2 id="nv-title">New voice</h2>
@@ -403,19 +405,30 @@
         <button type="button" data-value="record" aria-pressed="true">Record</button>
         <button type="button" data-value="upload" aria-pressed="false">Upload</button>
       </div>
-      <div id="nv-record" class="rec-panel">
-        <button type="button" id="record-btn" class="rec-btn" aria-label="Start recording"></button>
-        <canvas id="rec-wave" aria-hidden="true"></canvas>
-        <div class="rec-bar"><i id="rec-progress"></i></div>
-        <div class="rec-legend"><span>0:00</span><span>3 s minimum</span><span id="rec-time">0:00 / 0:10</span></div>
-        <div class="small" id="record-status"></div>
+      <div id="nv-record" class="rec-wrap">
+        <div id="nv-passage" class="passage">
+          <div class="passage-head">
+            <span><b>Read this aloud</b> <small id="nv-passage-title"></small></span>
+            <button type="button" id="nv-passage-next" class="link-btn">Show another</button>
+          </div>
+          <p id="nv-passage-text"></p>
+          <small>Optional — read this, or say anything you like. The recording is transcribed either way.</small>
+        </div>
+        <div class="rec-panel">
+          <button type="button" id="record-btn" class="rec-btn" aria-label="Start recording"></button>
+          <div id="rec-countdown" class="rec-countdown" aria-live="assertive"></div>
+          <canvas id="rec-wave" aria-hidden="true"></canvas>
+          <div class="rec-bar"><i id="rec-progress"></i></div>
+          <div class="rec-legend"><span>0:00</span><span>aim for 8–15 s</span><span id="rec-time">0:00 / 0:30</span></div>
+          <div class="small" id="record-status"></div>
+        </div>
       </div>
       <div id="nv-upload" hidden>
         <div id="clone-drop" class="dropzone">
           <input id="clone-file" type="file" accept="audio/*" class="visually-hidden">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
           <b>Drop an audio clip</b>
-          <span class="small">or click to browse · about 10 seconds of clear speech</span>
+          <span class="small">or click to browse · 8–15 seconds of clear speech; the clone keeps up to 10, ending at a pause</span>
         </div>
         <div class="small" id="upload-hint"></div>
       </div>
@@ -425,7 +438,10 @@
         <button type="button" class="icon-btn" id="nv-file-clear" aria-label="Remove this clip">✕</button>
       </div>
       <label class="field"><span>What you said <small>optional — transcribed automatically</small></span>
-        <input id="clone-reftext" placeholder="Leave blank to transcribe the clip"></label>
+        <input id="clone-reftext" placeholder="Leave blank to transcribe the clip">
+        <small id="clone-reftext-hint">A typed transcript must match the whole recording. If it runs past
+          10 seconds, leave this blank: only the first 10 s are kept, so typed text wouldn't match and
+          the clone is refused.</small></label>
       <div id="clone-msg" class="msg"></div>
       <div class="actions">
         <button type="button" class="btn ghost" id="nv-cancel">Cancel</button>

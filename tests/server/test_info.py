@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from auris.audio.asr_models import DEFAULT_MODEL
+
 
 def test_info_shape(client):
     r = client.get("/v1/info")
@@ -11,7 +13,7 @@ def test_info_shape(client):
     assert body["tts"]["f5_tts"]["workers"] == 1
     assert isinstance(body["tts"]["f5_tts"]["devices"], list)
     asr = body["asr"]
-    assert asr["model"] == "base.en" and asr["workers"] >= 1
+    assert asr["model"] == DEFAULT_MODEL and asr["workers"] >= 1
     assert asr["device"] in ("cpu", "cuda") and asr["compute_type"]
     assert "small.en" in asr["allowed"]
     limits = body["limits"]

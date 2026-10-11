@@ -5,6 +5,7 @@ import io as _io
 import numpy as np
 import soundfile as sf
 
+from auris.audio.asr_models import DEFAULT_MODEL
 from auris.server.routers import openai
 
 from .conftest import FakeAsrPool, run_on_app_loop
@@ -25,7 +26,7 @@ def test_transcription_uses_the_server_default_when_no_model_is_sent(client):
         "/v1/audio/transcriptions", files={"file": ("clip.wav", _wav_bytes(), "audio/wav")}
     )
     assert r.status_code == 200, r.text
-    assert _pool(client).jobs[-1].options.model == "base.en"
+    assert _pool(client).jobs[-1].options.model == DEFAULT_MODEL
 
 
 def test_transcription_accepts_the_openai_whisper_1_alias(client):
@@ -35,7 +36,7 @@ def test_transcription_accepts_the_openai_whisper_1_alias(client):
         data={"model": "whisper-1"},
     )
     assert r.status_code == 200, r.text
-    assert _pool(client).jobs[-1].options.model == "base.en"
+    assert _pool(client).jobs[-1].options.model == DEFAULT_MODEL
 
 
 def test_remote_caller_can_choose_an_allowed_model(client):
@@ -64,7 +65,7 @@ def test_audio_models_lists_the_allowlist(client):
     r = client.get("/v1/audio/models")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["default"] == "base.en"
+    assert body["default"] == DEFAULT_MODEL
     ids = [m["id"] for m in body["models"]]
     assert "small.en" in ids and "large-v3-turbo" in ids
     assert all(m["desc"] for m in body["models"])

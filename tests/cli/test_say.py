@@ -5,6 +5,8 @@ import asyncio
 import numpy as np
 from typer.testing import CliRunner
 
+from auris.audio.transcript import Transcript
+
 import auris.cli.commands.record as record_cmd
 import auris.cli.commands.say as say_cmd
 from auris.cli.main import app
@@ -32,7 +34,11 @@ class _FakeModel(TTSModel):
 
 def _seed_speaker(monkeypatch):
     monkeypatch.setattr(record_cmd, "record_audio", _fake_record)
-    monkeypatch.setattr(record_cmd, "transcribe_audio", lambda audio, sr, **kw: "seed transcript")
+    monkeypatch.setattr(
+        record_cmd,
+        "transcribe_reference",
+        lambda audio, sr, **kw: Transcript(text="seed transcript"),
+    )
     assert runner.invoke(app, ["record", "Me", "--seconds", "10"]).exit_code == 0
 
 

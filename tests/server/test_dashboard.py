@@ -138,9 +138,57 @@ def test_audio_and_synth_modules_are_served(client):
 
 def test_voices_module_is_served_and_wired(client):
     src = client.get("/static/js/voices.js", headers=NO_AUTH).text
-    for marker in ("/clips", "PATCH", "delete the voice", "maxSeconds: 10", "auris:voices"):
+    for marker in ("/clips", "PATCH", "delete the voice", "auris:voices", "/audio"):
         assert marker in src, marker
     assert "initVoices" in client.get("/static/js/app.js").text
+
+
+def test_recording_runs_a_countdown_and_no_longer_stops_at_ten_seconds(client):
+    # A recording stopped on a 10 s timer usually ends mid-word — the cause of f5-TTS speaking a
+    # stray word at the start of every generation. The user stops it now (30 s at most), the mic
+    # records through a countdown so the clip opens on room tone, and the server cuts in a pause.
+    src = client.get("/static/js/voices.js", headers=NO_AUTH).text
+    assert "maxSeconds: 10" not in src
+    assert "const REC_MAX_S = 30" in src
+    assert "maxSeconds: COUNTDOWN_S + REC_MAX_S" in src
+    assert "countdownStep(" in src and "rec-countdown" in src
+    passages = client.get("/static/js/passages.js", headers=NO_AUTH)
+    assert passages.status_code == 200 and "javascript" in passages.headers["content-type"]
+    assert "When the sunlight strikes raindrops" in passages.text
+
+
+def test_the_new_voice_dialog_offers_a_passage_and_explains_the_transcript_rule(client):
+    body = client.get("/").text
+    for marker in (
+        '<dialog id="new-voice" class="modal xwide"',  # wide enough for the passage
+        'id="nv-passage"',
+        'id="nv-passage-title"',
+        'id="nv-passage-text"',
+        'id="nv-passage-next"',
+        'id="rec-countdown"',
+        'id="clone-reftext-hint"',
+        "0:00 / 0:30",
+    ):
+        assert marker in body, marker
+    assert "Optional" in body and "transcribed either way" in body
+
+
+def test_clone_warnings_and_reference_clip_playback_are_wired(client):
+    body = client.get("/").text
+    assert 'id="vc-warnings"' in body and 'id="clip-audio"' in body
+    src = client.get("/static/js/voices.js", headers=NO_AUTH).text
+    assert "j.warnings" in src  # the clone response's warnings are shown, not dropped
+    assert '"/clips/" + index + "/audio"' in src and "revokeObjectURL" in src
+
+
+def test_synthesize_and_transcribe_choices_are_remembered(client):
+    synth = client.get("/static/js/synth.js", headers=NO_AUTH).text
+    for key in ('"voice"', '"speed"', '"format"', '"mode"'):
+        assert "setPref(" + key in synth, key
+    stt = client.get("/static/js/transcribe.js", headers=NO_AUTH).text
+    assert 'setPref("asrModel"' in stt and 'setPref("language"' in stt
+    # ...and the Settings page, which shows them as the defaults, follows along.
+    assert "auris:prefs" in client.get("/static/js/settings.js", headers=NO_AUTH).text
 
 
 def test_settings_module_is_served_and_wired(client):

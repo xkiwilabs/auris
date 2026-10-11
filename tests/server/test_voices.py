@@ -27,6 +27,72 @@ def test_clone_list_delete_roundtrip(client):
     assert "Me" not in [v["name"] for v in client.get("/v1/voices").json()]
 
 
+def _speech_wav(spec, sr=24000):
+    """Tone bursts ("s") and quiet pauses ("p") as a WAV, plus Words timed to the bursts."""
+    from auris.audio.transcript import Word
+
+    parts, words, t = [], [], 0.0
+    for kind, seconds, word in spec:
+        n = int(seconds * sr)
+        if kind == "s":
+            parts.append(0.3 * np.sin(2 * np.pi * 180 * np.arange(n) / sr))
+            words.append(Word(start=t, end=t + seconds, word=word, probability=1.0))
+        else:
+            parts.append(1e-4 * np.random.default_rng(0).standard_normal(n))
+        t += seconds
+    buf = _io.BytesIO()
+    sf.write(buf, np.concatenate(parts).astype(np.float32), sr, format="WAV")
+    return buf.getvalue(), words
+
+
+_LONG = [
+    ("s", 4.0, "One."),
+    ("p", 0.4, None),
+    ("s", 4.0, "Two."),
+    ("p", 0.4, None),
+    ("s", 4.0, "Three."),
+]
+
+
+def test_a_long_upload_is_cut_in_a_pause_and_stores_only_the_words_kept(client):
+    from .conftest import FakeAsrPool
+
+    wav, words = _speech_wav(_LONG)
+    pool = FakeAsrPool(text="One. Two. Three.", words=words)
+    client.app.state.asr_pool = pool
+    r = client.post("/v1/voices/Long/clone", files={"file": ("l.wav", wav, "audio/wav")})
+    assert r.status_code == 201, r.text
+    body = r.json()
+    # Cut in the pause after "Two." — not at a blind 10.0 s, which lands inside "Three."
+    assert body["transcript"] == "One. Two."
+    assert 8.4 < body["duration_s"] <= 8.75
+    assert body["warnings"] == []
+    (job,) = pool.jobs
+    o = job.options
+    assert (o.language, o.vad_filter, o.word_timestamps) == ("en", False, True)
+
+
+def test_a_typed_transcript_for_a_recording_that_must_be_cut_is_refused(client):
+    wav, _ = _speech_wav(_LONG)
+    r = client.post(
+        "/v1/voices/Long/clone",
+        files={"file": ("l.wav", wav, "audio/wav")},
+        data={"ref_text": "One. Two. Three."},
+    )
+    assert r.status_code == 422
+    assert "typed transcript would not match" in r.json()["error"]["message"]
+
+
+def test_a_short_clip_is_stored_with_a_warning(client):
+    from .conftest import FakeAsrPool
+
+    wav, words = _speech_wav([("p", 0.3, None), ("s", 4.0, "Short."), ("p", 0.5, None)])
+    client.app.state.asr_pool = FakeAsrPool(text="Short.", words=words)
+    r = client.post("/v1/voices/Brief/clone", files={"file": ("b.wav", wav, "audio/wav")})
+    assert r.status_code == 201, r.text
+    assert any("usually captures the voice" in w for w in r.json()["warnings"])
+
+
 def test_voices_list_includes_presets(client):
     r = client.get("/v1/voices")
     assert r.status_code == 200

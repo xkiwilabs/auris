@@ -1,14 +1,15 @@
 // auris/server/static/js/voices.js — the voice library: cards, the detail panel, New voice.
 //
-// "Play" (on a card or in the detail panel) synthesises the fixed SAMPLE_TEXT in that voice —
-// there is no route that serves a stored clip's audio — and caches the blob URL per voice for
-// the life of the page. Every voice name reaches the DOM through textContent: a name may contain
+// "Play" (on a card or in the detail panel) synthesises the fixed SAMPLE_TEXT in that voice and
+// caches the blob URL per voice for the life of the page. The ▶ beside each clip plays the stored
+// reference itself (GET …/clips/{index}/audio) — what the clone is copying — one at a time. Every voice name reaches the DOM through textContent: a name may contain
 // < > " ' (only / \ and control characters are refused), so it must never be parsed as markup.
 "use strict";
 import { api, getJson, setMsg, fmtSeconds } from "./api.js";
 import { recordClip, micAvailable, levelMeter } from "./audio.js";
 import { mayChangeVisibility } from "./voice-visibility.js";
 import { groupVoices, ownerLabel, mmss, fmtBytes } from "./view-logic.js";
+import { PASSAGES, nextPassage, countdownStep, COUNTDOWN_S } from "./passages.js";
 import { loadPrefs, setPref } from "./prefs.js";
 import { avatarEl } from "./avatar.js";
 import { drawBars } from "./waveform.js";
@@ -19,7 +20,9 @@ import { bindSegmented } from "./segmented.js";
 import { $ } from "./app.js";
 
 const SAMPLE_TEXT = "This is a test of this voice. How does it sound to you?";
-const REC_MAX_S = 10; // cloning cap: f5-TTS references are capped at ~10 s
+// Seconds of speaking time, after the countdown. Longer than the 10 s the clone keeps on purpose:
+// a recording stopped on a timer usually ends mid-word, and the server cuts back to a pause.
+const REC_MAX_S = 30;
 const REC_MIN_S = 3;  // the clone route refuses a clip shorter than this
 const WAVE_BARS = 64;
 const samples = new Map(); // voice name -> object URL of a cached sample
@@ -32,6 +35,9 @@ let recorder = null;
 let hasMic = false;
 let detailPlayer = null;
 let source = null;      // the Record / Upload switch in the New voice dialog
+let passage = 0;        // which PASSAGES entry the New voice dialog shows
+let clipPlaying = null; // {key, url} of the reference clip #clip-audio holds
+let clipSeq = 0; // bumped per clip request, so a slow fetch that lost the race is dropped
 
 // Drop a cached sample and release its blob: an object URL pins the decoded audio until revoked.
 function dropSample(name) {
@@ -146,7 +152,7 @@ function renderList(state) {
     let card;
     if (query.trim()) card = emptyCard("No voices match “" + query.trim() + "”.", false);
     else if (filter === "shared") card = emptyCard("Nothing has been shared with you yet.", false);
-    else card = emptyCard("No voices yet — clone one from a 10-second recording.", true);
+    else card = emptyCard("No voices yet — clone one from a short recording.", true);
     list.append(grid([card]));
   }
   $("presets-list").replaceChildren(...groups.presets.map((v) => voiceCard(state, v)));
@@ -185,6 +191,8 @@ async function select(state, name) {
   selected = name;
   renderList(state);
   setMsg($("vc-msg"), "", "");
+  showWarnings([]);
+  stopClip();
   const v = state.voices.find((x) => x.name === name);
   if (!v) { clearDetail(state); return; }
   $("voice-lib").classList.add("has-selection");
@@ -226,12 +234,19 @@ function clipsSection(state, name, clips) {
     const main = document.createElement("div");
     main.append(textEl("span", "clip-len", fmtSeconds(c.duration_s)),
       textEl("p", "clip-text", c.transcript || "—"));
+    const play = document.createElement("button");
+    play.type = "button";
+    play.className = "play-mini clip-play";
+    play.dataset.clip = c.index;
+    play.dataset.key = clipKey(name, c.index);
+    play.setAttribute("aria-label", "Play clip " + c.index);
+    play.addEventListener("click", () => playClip(name, c.index, play));
     const del = textEl("button", "icon-btn danger", "✕");
     del.type = "button";
     del.dataset.clip = c.index;
     del.setAttribute("aria-label", "Delete clip " + c.index);
     del.addEventListener("click", () => deleteClip(state, name, c.index));
-    li.append(textEl("span", "clip-idx", String(c.index)), main, del);
+    li.append(textEl("span", "clip-idx", String(c.index)), main, play, del);
     ol.append(li);
   }
   const add = textEl("button", "btn block", "+ Add a clip");
@@ -242,7 +257,64 @@ function clipsSection(state, name, clips) {
   return frag;
 }
 
+// ---------------------------------------------------------------- reference clip playback
+
+const clipKey = (name, index) => name + "\u0000" + index; // \0 can't appear in a voice name
+
+// Only one clip's blob is held at a time: switching clips (or voices) releases the last one.
+function stopClip() {
+  const a = $("clip-audio");
+  a.pause();
+  a.removeAttribute("src");
+  a.load();
+  if (clipPlaying) URL.revokeObjectURL(clipPlaying.url);
+  clipPlaying = null;
+  markClips();
+}
+
+async function playClip(name, index, btn) {
+  const a = $("clip-audio"), key = clipKey(name, index);
+  if (clipPlaying && clipPlaying.key === key) {
+    if (a.paused) a.play().catch(() => {}); else a.pause();
+    return;
+  }
+  stopClip();
+  const seq = ++clipSeq;
+  btn.classList.add("busy");
+  try {
+    const res = await api("/v1/voices/" + encodeURIComponent(name) + "/clips/" + index + "/audio");
+    const blob = await res.blob();
+    // Another clip was asked for (or the voice switched) while this one downloaded.
+    if (seq !== clipSeq || selected !== name) return;
+    const url = URL.createObjectURL(blob);
+    clipPlaying = { key, url };
+    detailPlayer.pause();
+    $("sample-audio").pause();
+    a.src = url;
+    await a.play();
+  } catch (e) {
+    if (e.name !== "AbortError") setMsg($("vc-msg"), e.message, "err");
+  } finally { btn.classList.remove("busy"); }
+}
+
+function markClips() {
+  const a = $("clip-audio");
+  for (const b of document.querySelectorAll(".clip-play")) {
+    const on = !!clipPlaying && b.dataset.key === clipPlaying.key && !a.paused;
+    b.classList.toggle("playing", on);
+    b.setAttribute("aria-label", (on ? "Pause" : "Play") + " clip " + b.dataset.clip);
+  }
+}
+
+function showWarnings(list) {
+  const ul = $("vc-warnings");
+  ul.replaceChildren(...list.map((w) => textEl("li", "", w)));
+  ul.hidden = !list.length;
+}
+
 function clearDetail(state) {
+  stopClip();
+  showWarnings([]);
   selected = null;
   $("voice-lib").classList.remove("has-selection");
   $("vc-empty").hidden = false;
@@ -368,13 +440,21 @@ function setFile(file, seconds = null) {
   showFile(file, seconds);
 }
 
+function showPassage(index) {
+  passage = index;
+  $("nv-passage-title").textContent = "· " + PASSAGES[index].title;
+  $("nv-passage-text").textContent = PASSAGES[index].text;
+}
+
 function resetRecordUi() {
   $("record-btn").classList.remove("active");
   $("record-btn").setAttribute("aria-label", "Start recording");
   $("rec-progress").style.width = "0%";
+  $("rec-countdown").textContent = "";
   $("rec-time").textContent = "0:00 / " + mmss(REC_MAX_S);
   $("record-status").textContent =
-    "Read a sentence or two in your natural voice. Recording stops at " + REC_MAX_S + " seconds.";
+    "Talk for 8–15 seconds in a few sentences, in your natural voice, then press stop. " +
+    "The clone keeps up to 10 s and ends at a pause.";
   drawBars($("rec-wave"), new Array(WAVE_BARS).fill(0.04), 0);
 }
 
@@ -398,36 +478,50 @@ async function toggleRecord() {
   if (recorder) { recorder.stop(); return; }
   setMsg($("clone-msg"), "", "");
   setFile(null);
-  let meter = null, elapsed = 0;
+  let meter = null, elapsed = 0, speaking = false;
   const levels = [];
   try {
-    recorder = await recordClip({ maxSeconds: 10, onTick: (t, max) => {
+    // The mic records through the countdown too, so the clip opens on room tone instead of
+    // clipping the first syllable; the server trims that lead-in back to a fraction of a second.
+    recorder = await recordClip({ maxSeconds: COUNTDOWN_S + REC_MAX_S, onTick: (t) => {
       elapsed = t;
+      const step = countdownStep(t);
+      $("rec-countdown").textContent = step.label || "";
+      if (step.speaking && !speaking) {
+        speaking = true;
+        $("record-status").textContent =
+          "Recording… press stop when you're done (it stops by itself at " + REC_MAX_S + " s).";
+      }
       if (meter) {
         levels.push(meter.level());
         if (levels.length > WAVE_BARS) levels.shift();
         drawBars($("rec-wave"), new Array(WAVE_BARS - levels.length).fill(0.04).concat(levels), 1);
       }
-      $("rec-progress").style.width = Math.min(100, (t / max) * 100) + "%";
-      $("rec-time").textContent = mmss(t) + " / " + mmss(max);
+      $("rec-progress").style.width = Math.min(100, (step.spoken / REC_MAX_S) * 100) + "%";
+      $("rec-time").textContent = mmss(step.spoken) + " / " + mmss(REC_MAX_S);
     } });
   } catch (e) { return setMsg($("clone-msg"), e.message, "err"); }
+  // The dialog closed while the browser asked for the mic: its close handler found no recorder.
+  if (!$("new-voice").open) { recorder.stop(); await recorder.file; recorder = null; return; }
   meter = levelMeter(recorder.stream);
   btn.classList.add("active");
   btn.setAttribute("aria-label", "Stop recording");
-  $("record-status").textContent = "Recording… press stop when you're done, or it stops at " + REC_MAX_S + " s.";
+  $("record-status").textContent = "Get ready — start speaking when the countdown ends.";
   const file = await recorder.file;
   recorder = null;
   meter.close();
   btn.classList.remove("active");
   btn.setAttribute("aria-label", "Record again");
-  if (elapsed < REC_MIN_S) {
+  $("rec-countdown").textContent = "";
+  const spoken = countdownStep(elapsed).spoken;
+  if (spoken < REC_MIN_S) {
     $("record-status").textContent =
-      "That was under " + REC_MIN_S + " seconds — the server needs at least " + REC_MIN_S + ". Record again.";
+      "That was under " + REC_MIN_S + " seconds of speaking — the server needs at least " +
+      REC_MIN_S + ". Record again.";
     return;
   }
   setFile(file, elapsed);
-  $("record-status").textContent = "Recorded " + mmss(elapsed) + ". Add what you said if you like, then save.";
+  $("record-status").textContent = "Recorded " + mmss(spoken) + " of speech. Add what you said if you like, then save.";
 }
 
 async function addVoice(state, ev) {
@@ -450,6 +544,7 @@ async function addVoice(state, ev) {
     await select(state, j.voice);
     setMsg($("vc-msg"), "Added clip " + j.clip_index + " — " + fmtSeconds(j.duration_s) +
       '. Transcript: "' + j.transcript + '"', "ok");
+    showWarnings(j.warnings || []); // e.g. a short clip, or no pause to cut in
   } catch (e) { setMsg($("clone-msg"), e.message, "err"); }
   finally { $("nv-submit").disabled = false; }
 }
@@ -461,7 +556,9 @@ export async function initVoices(state) {
   detailPlayer = createPlayer($("vc-player"), $("vc-audio"), {
     onEmptyPlay: () => { if (selected) loadDetailSample(selected); },
   });
-  $("vc-audio").addEventListener("play", () => $("sample-audio").pause());
+  $("vc-audio").addEventListener("play", () => { $("sample-audio").pause(); $("clip-audio").pause(); });
+  $("sample-audio").addEventListener("play", () => $("clip-audio").pause());
+  for (const e of ["play", "pause", "ended", "emptied"]) $("clip-audio").addEventListener(e, markClips);
   for (const e of ["play", "pause", "ended", "emptied"]) $("sample-audio").addEventListener(e, markPlaying);
   $("new-voice-btn").addEventListener("click", () => openNewVoice());
   $("voice-search").addEventListener("input", (ev) => { query = ev.target.value; renderList(state); });
@@ -484,6 +581,8 @@ export async function initVoices(state) {
   $("new-voice").addEventListener("close", () => { if (recorder) recorder.stop(); });
   $("clone-form").addEventListener("submit", (ev) => addVoice(state, ev));
   $("record-btn").addEventListener("click", toggleRecord);
+  showPassage(passage);
+  $("nv-passage-next").addEventListener("click", () => showPassage(nextPassage(passage)));
 
   bindSegmented($("voice-filter"), (value) => { filter = value; renderList(state); });
   $("show-others-row").hidden = !state.admin;

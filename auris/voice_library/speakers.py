@@ -255,6 +255,13 @@ async def get_speaker_by_id(conn: aiosqlite.Connection, speaker_id: str) -> Spea
     return _row(r) if r else None
 
 
+async def list_all(conn: aiosqlite.Connection) -> list[Speaker]:
+    """Every voice, any owner, name-sorted. The box operator's unscoped view (`auris voices
+    refit`); never reachable over HTTP, where every caller has a Viewer."""
+    cur = await conn.execute("SELECT * FROM speakers ORDER BY name COLLATE NOCASE, owner_id")
+    return [_row(r) for r in await cur.fetchall()]
+
+
 async def list_visible_with_stats(
     conn: aiosqlite.Connection, viewer: Viewer | None
 ) -> list[tuple[str, int, float, str, str | None, str]]:

@@ -39,7 +39,7 @@ heavy ML dependencies**. This is enforced by **lazy imports**, not just packagin
 
 - `torch` / `f5_tts` are imported *inside* methods (`F5TTSModel.load`, `_resolve_device`), never
   at module top level.
-- `faster_whisper` is imported inside `transcribe_audio`; `ctranslate2` inside `_cuda_available`.
+- `faster_whisper` is imported inside `load_whisper`; `ctranslate2` inside `_cuda_available`.
 - `sounddevice` (PortAudio) is an optional `audio` extra, imported lazily so headless installs work.
 
 When adding a model or a feature that needs torch/whisper/PortAudio, **keep the import lazy** and
@@ -126,7 +126,8 @@ Layered, with the model behind an abstract interface so it can be swapped/mocked
     can never create or modify a voice. `auris clone` on the box always targets the operator's own
     (unowned) namespace, never a global by-name match, so it can never append to a signed-in
     user's voice.
-- **`auris/audio/`** — `io.py` (load/save/resample/`prepare_reference`), `record.py` (mic),
+- **`auris/audio/`** — `io.py` (load/save/resample), `reference.py` (fit an upload to a cloning
+  reference — see the 10 s gotcha below), `record.py` (mic),
   `playback.py`, `stream.py` (background-worker streaming synthesis), `transcribe.py` (ASR).
   - **`transcript.py` holds the STT result types** — frozen `Word` / `Segment` / `Transcript` plus
     `TranscribeOptions` (`model`, `language`, `task`, `word_timestamps`, `vad_filter`,
@@ -137,8 +138,10 @@ Layered, with the model behind an abstract interface so it can be swapped/mocked
     instance), `get_whisper` is the cached counterpart for the single-user local path,
     `run_whisper(whisper, audio, sample_rate, options)` is a **pure** decode (no settings lookup,
     no model resolution) so a worker thread can call it. `transcribe_detailed(...) -> Transcript`
-    is the local entry point; `transcribe_audio(...) -> str` is the unchanged cloning path.
-  - **Cloning forces `language="en"` and `vad_filter=False`; the STT surface auto-detects.**
+    is the local entry point; `transcribe_reference(...)` is the cloning decode (with
+    `reference.clone_options`), and `transcribe_audio(...) -> str` its text-only form.
+  - **Cloning forces `language="en"` and `vad_filter=False`, and asks for word timestamps (one
+    place: `reference.clone_options`); the STT surface auto-detects.**
     Deliberate: an accented English reference auto-detected as another language would degrade
     f5's conditioning, and the VAD can drop a leading word and desynchronise audio from
     transcript. Don't "unify" these.
@@ -217,8 +220,9 @@ Layered, with the model behind an abstract interface so it can be swapped/mocked
   - **`auris/server/static/`** — the dashboard: multi-file vanilla ES modules, no build step, no
     CDN. Markup lives in `index.html`, behaviour in `js/*.js` — one module per page
     (`voices`/`synth`/`transcribe`/`settings`/`account`/`users`) plus `app.js` (shell, nav),
-    `api.js`/`auth.js`/`prefs.js`, and small shared UI modules: pure `view-logic.js`, `avatar.js`
-    and `waveform.js` (node-tested in `tests/js/`), and DOM `player.js` (waveform player over a
+    `api.js`/`auth.js`/`prefs.js`, and small shared UI modules: pure `view-logic.js`, `avatar.js`,
+    `waveform.js` and `passages.js` (the New voice dialog's reading passages and record countdown;
+    node-tested in `tests/js/`), and DOM `player.js` (waveform player over a
     hidden `<audio>`), `dialog.js` (in-page confirm/prompt — **never `window.confirm`/`prompt`**,
     a test enforces it), `dropzone.js`, `segmented.js`, `clipboard.js` (off a secure context —
     the tailnet page — it copies through a throwaway textarea, and only then falls back to
@@ -255,8 +259,9 @@ Layered, with the model behind an abstract interface so it can be swapped/mocked
   `data/` (`voices/`, `auris.db`); internal/output sample rate is **24 kHz**.
 
 ### Data flow
-- **clone/record**: load audio → resample to 24 kHz → `prepare_reference` (trim silence, cap to
-  **≤10 s**) → transcribe (unless `--ref-text`) → store WAV + DB row.
+- **clone/record**: load audio → resample to 24 kHz → word-timestamped decode of the first ~15 s
+  (unless `--ref-text`) → `reference.reference_for_clone` (lead-in, **≤10 s ending in a pause**,
+  transcript = the kept words) → store WAV + DB row.
 - **tts/say**: `load_speaker_reference` (latest clip + transcript) → `build_model` →
   `synthesise`. `tts` writes a WAV; `say` streams chunks to live playback.
 - **transcribe**: load audio (or record, **uncapped** — the 10 s cap is a cloning constraint) →
@@ -265,10 +270,22 @@ Layered, with the model behind an abstract interface so it can be swapped/mocked
 
 ## Conventions & gotchas
 
-- **The 10-second reference cap is deliberate, not arbitrary.** f5-TTS re-clips references over
-  ~12 s internally but keeps the full transcript we pass, and that length mismatch leaks the
-  reference's trailing word into every generation. `prepare_reference` caps to 10 s; the stored
-  audio is transcribed *after* the cap so audio and transcript stay matched. Don't raise this.
+- **The 10-second reference cap is deliberate, not arbitrary, and so is where it cuts.** f5-TTS
+  re-clips references over ~12 s internally but keeps the full transcript we pass, and that
+  length mismatch leaks the reference's trailing word into every generation — so don't raise the
+  cap. And f5 generates the new speech as a *continuation* of the reference, so a reference that
+  ends part-way through a word makes it finish that word at the start of the output. Measured
+  with fixed seeds: an intact clip leaked its last word in 1 of 24 generations, the same clip
+  with its last 0.15 s removed in 22 of 24; trailing silence made no difference. Hence
+  `audio/reference.py`: the cut is placed by **audio energy inside a pause** (never by a blind cap,
+  and never by Whisper's word end times, which run early), a clip that already stops at full
+  level is backed up to its last pause, and the transcript is the words of the same decode that
+  fall before the cut. An ending only counts as finished when quiet follows it — loudness proves
+  nothing (a cut in the soft "s" of "Science" ends quietly and still leaks). A typed transcript
+  is refused when the cut drops speech. For clips stored before this, `auris voices refit` tests
+  by ear instead: it has each voice speak six sentences and counts stray leading words
+  (`reference.extra_leading_words`), because most old clips were trimmed tight and so have no
+  quiet tail whether or not their last word is whole.
 - **`load_audio` (`audio/io.py`)** tries libsndfile first, falls back to FFmpeg for mp3/m4a/mp4.
   It deliberately re-raises libsndfile `SF_ERR_SYSTEM` (code 2 = OS open failure) instead of
   routing missing/permission-denied files to FFmpeg. FFmpeg is a real runtime dependency.

@@ -259,7 +259,7 @@ def test_transcribe_audio_still_returns_a_string_and_forces_english(monkeypatch)
     assert out == "hi"
     # cloning must never auto-detect: a mis-detected reference degrades f5 conditioning
     assert model_cls.last_kwargs["language"] == "en"
-    # ...nor run VAD: prepare_reference already trimmed the silence, and dropping a leading
+    # ...nor run VAD: reference fitting already trimmed the silence, and dropping a leading
     # word here would desynchronise the stored audio from the transcript f5 conditions on.
     assert model_cls.last_kwargs["vad_filter"] is False
 

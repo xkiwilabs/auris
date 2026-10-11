@@ -158,37 +158,3 @@ def test_save_wav_creates_parent_dirs(tmp_path):
     path = tmp_path / "nested" / "dir" / "out.wav"
     io.save_wav(path, audio, 24000)
     assert path.exists()
-
-
-def test_prepare_reference_caps_to_max_seconds():
-    sr = 24000
-    audio = np.full(20 * sr, 0.2, dtype=np.float32)  # 20s of constant-energy signal
-    out = io.prepare_reference(audio, sr, max_seconds=12.0)
-    assert len(out) <= 12 * sr
-    assert len(out) >= 11 * sr
-
-
-def test_prepare_reference_default_cap_is_under_f5tts_limit():
-    # The default cap must be safely UNDER f5-TTS's ~12s reference limit. At/over 12s,
-    # f5-TTS re-clips the audio but not our transcript → length mismatch → it leaks the
-    # reference's trailing word into the start of every generation.
-    sr = 24000
-    audio = np.full(20 * sr, 0.2, dtype=np.float32)  # 20s, no silence to trim
-    out = io.prepare_reference(audio, sr)  # default cap
-    assert len(out) <= 10 * sr
-
-
-def test_prepare_reference_trims_silence():
-    sr = 24000
-    speech = np.full(2 * sr, 0.3, dtype=np.float32)
-    audio = np.concatenate([np.zeros(sr, dtype=np.float32), speech, np.zeros(sr, dtype=np.float32)])
-    out = io.prepare_reference(audio, sr)
-    assert len(out) < len(audio)  # leading/trailing silence removed
-    assert len(out) >= int(1.5 * sr)
-
-
-def test_prepare_reference_all_silence_falls_back():
-    sr = 24000
-    audio = np.zeros(5 * sr, dtype=np.float32)
-    out = io.prepare_reference(audio, sr)
-    assert len(out) == len(audio)  # no crash / no empty clip on pure silence

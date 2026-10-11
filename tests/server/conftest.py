@@ -45,9 +45,10 @@ class FakeAsrPool(TranscriptionPool):
     It subclasses the real pool so `admit()` — the gate the STT route holds around the
     decode — is the real one, not a stub."""
 
-    def __init__(self, text="hello world", queue_maxsize=8):
+    def __init__(self, text="hello world", queue_maxsize=8, words=()):
         super().__init__([object()], queue_maxsize, "base.en", "cpu", "int8")
         self.text = text
+        self.words = tuple(words)  # word timestamps, for the clone path's cut placement
         self.jobs = []
 
     async def submit(self, job):
@@ -56,7 +57,7 @@ class FakeAsrPool(TranscriptionPool):
         self.jobs.append(job)
         return Transcript(
             text=self.text,
-            segments=(Segment(id=0, start=0.0, end=1.0, text=self.text),),
+            segments=(Segment(id=0, start=0.0, end=1.0, text=self.text, words=self.words),),
             language="en",
             language_probability=0.99,
             duration_s=1.0,

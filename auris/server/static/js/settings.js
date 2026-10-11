@@ -171,6 +171,8 @@ export async function initSettings(state) {
   renderPrefs(state);
   bindPrefs();
   document.addEventListener("auris:voices", () => renderPrefs(state));
+  // Choices made on the Synthesize and Transcribe pages are saved as these same defaults.
+  document.addEventListener("auris:prefs", () => renderPrefs(state));
   if (state.admin) {
     $("admin-card").style.display = "";
     $("jump-keys").hidden = false;

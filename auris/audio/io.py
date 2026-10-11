@@ -134,18 +134,3 @@ def save_wav(path: str | Path, audio: np.ndarray, sample_rate: int) -> Path:
 
 def duration_s(audio: np.ndarray, sample_rate: int) -> float:
     return len(audio) / sample_rate
-
-
-def prepare_reference(audio: np.ndarray, sample_rate: int, max_seconds: float = 10.0) -> np.ndarray:
-    """Trim leading/trailing silence and cap to max_seconds.
-
-    The cap must stay safely UNDER f5-TTS's ~12s reference limit. If a reference is at or
-    over ~12s, f5-TTS re-clips the audio internally ("Audio is over 12s, clipping short")
-    but keeps the full transcript we pass — that length mismatch makes it leak the
-    reference's trailing word into the start of every generation. Capping here to 10s
-    (and transcribing the result) keeps the stored audio and its transcript matched and
-    short enough that f5-TTS leaves them alone."""
-    trimmed, _ = librosa.effects.trim(audio.astype(np.float32), top_db=30)
-    if trimmed.size == 0:  # pure silence → keep the original rather than an empty clip
-        trimmed = audio.astype(np.float32)
-    return trimmed[: int(max_seconds * sample_rate)]

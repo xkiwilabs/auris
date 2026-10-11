@@ -149,6 +149,9 @@ button.chip:hover { color:var(--fg); border-color:var(--a1); }
 .msg.err { color:var(--bad); }
 .msg.ok { color:var(--a2); }
 .msg.info { color:var(--fg2); }
+.msg.warn { display:grid; gap:6px; margin-top:10px; padding:10px 12px 10px 28px; border-radius:var(--r-ctl);
+  background:var(--warn-soft); color:var(--warn); }
+.msg.warn[hidden] { display:none; }
 .banner { display:flex; gap:10px; align-items:center; padding:12px 14px; margin-bottom:16px;
   border-radius:var(--r-ctl); background:var(--warn-soft); color:var(--warn);
   border:1px solid rgba(251,191,36,.25); }
@@ -194,6 +197,8 @@ details.menu > summary:hover, details.menu[open] > summary { background:var(--ra
 dialog.modal { width:min(440px, calc(100vw - 32px)); padding:0; border:1px solid var(--line-strong);
   border-radius:16px; background:var(--surf); color:var(--fg); box-shadow:var(--shadow); }
 dialog.modal.wide { width:min(520px, calc(100vw - 32px)); }
+/* New voice: wide enough that the reading passage sits comfortably on a few lines */
+dialog.modal.xwide { width:min(680px, calc(100vw - 32px)); }
 dialog.modal::backdrop { background:rgba(5,6,10,.7); backdrop-filter:blur(3px); }
 dialog.modal form { display:grid; gap:14px; padding:22px; }
 dialog.modal p { color:var(--fg2); }
@@ -360,7 +365,7 @@ dialog.modal p { color:var(--fg2); }
 #voice-owner { display:block; margin-top:2px; font-size:13px; color:var(--fg3); overflow-wrap:anywhere; }
 .detail-close { display:none; }
 .clips { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
-.clips li { display:grid; grid-template-columns:28px minmax(0,1fr) auto; align-items:start; gap:10px;
+.clips li { display:grid; grid-template-columns:28px minmax(0,1fr) auto auto; align-items:start; gap:10px;
   padding:10px; border-radius:10px; background:var(--raise); }
 .clip-idx { display:grid; place-items:center; width:24px; height:24px; border-radius:7px; background:var(--bg);
   color:var(--fg2); font-size:12px; font-weight:600; }
@@ -369,6 +374,18 @@ dialog.modal p { color:var(--fg2); }
 .sheet-backdrop { display:none; }
 
 /* ---------- New voice: recorder ---------- */
+.rec-wrap { display:grid; gap:12px; }
+.rec-wrap[hidden] { display:none; }
+.passage { display:grid; gap:8px; padding:14px 16px; border:1px solid var(--line-strong);
+  border-radius:var(--r-card); background:var(--a1-soft); }
+.passage-head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+.passage-head small, .passage > small { font-size:12px; color:var(--fg3); }
+#nv-passage-text { font-size:17px; line-height:1.55; color:var(--fg); }
+.rec-countdown { min-height:28px; font-size:22px; font-weight:600; color:var(--fg); text-align:center;
+  font-variant-numeric:tabular-nums; }
+.rec-countdown:empty { min-height:0; }
+#clone-reftext-hint { line-height:1.45; }
+.clip-play { width:28px; height:28px; }
 .rec-panel { display:grid; justify-items:center; gap:12px; padding:18px; border-radius:var(--r-card);
   background:var(--raise); }
 .rec-btn { display:grid; place-items:center; width:56px; height:56px; padding:0; border:0; border-radius:50%;
@@ -382,8 +399,8 @@ dialog.modal p { color:var(--fg2); }
 .rec-bar { position:relative; width:100%; height:6px; border-radius:999px; background:rgba(255,255,255,.08); }
 .rec-bar > i { position:absolute; inset:0 auto 0 0; width:0; border-radius:inherit;
   background:linear-gradient(90deg, var(--a1), var(--a2)); transition:width 100ms linear; }
-.rec-bar::after { content:""; position:absolute; left:30%; top:-3px; bottom:-3px; width:2px; border-radius:1px;
-  background:var(--fg3); } /* the 3-second minimum, as a share of the 10-second cap */
+.rec-bar::after { content:""; position:absolute; left:10%; top:-3px; bottom:-3px; width:2px; border-radius:1px;
+  background:var(--fg3); } /* the 3-second minimum, as a share of the 30-second recording */
 .rec-legend { display:flex; justify-content:space-between; width:100%; font-size:12px; color:var(--fg3);
   font-variant-numeric:tabular-nums; }
 #record-status { text-align:center; }

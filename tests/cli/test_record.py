@@ -5,6 +5,8 @@ import asyncio
 import numpy as np
 from typer.testing import CliRunner
 
+from auris.audio.transcript import Transcript
+
 import auris.cli.commands.record as record_cmd
 from auris.cli.main import app
 from auris.config import load_settings
@@ -18,12 +20,12 @@ def _fake_record(seconds, sample_rate, on_tick=None):
 
 
 def _fake_transcribe(audio, sample_rate, **kwargs):
-    return "this is what I actually said"
+    return Transcript(text="this is what I actually said")
 
 
 def _patch_io(monkeypatch):
     monkeypatch.setattr(record_cmd, "record_audio", _fake_record)
-    monkeypatch.setattr(record_cmd, "transcribe_audio", _fake_transcribe)
+    monkeypatch.setattr(record_cmd, "transcribe_reference", _fake_transcribe)
 
 
 def _fetch(name):
@@ -65,7 +67,7 @@ def test_record_appends_to_existing_speaker(cli_data_dir, monkeypatch):
     assert len(clips2) == 2
 
 
-def test_record_default_length_is_10s(cli_data_dir, monkeypatch):
+def test_record_default_length_leaves_room_past_the_cap(cli_data_dir, monkeypatch):
     captured = {}
 
     def _capture(seconds, sample_rate, on_tick=None):
@@ -73,10 +75,12 @@ def test_record_default_length_is_10s(cli_data_dir, monkeypatch):
         return np.zeros(int(seconds * sample_rate), dtype=np.float32)
 
     monkeypatch.setattr(record_cmd, "record_audio", _capture)
-    monkeypatch.setattr(record_cmd, "transcribe_audio", _fake_transcribe)
+    monkeypatch.setattr(record_cmd, "transcribe_reference", _fake_transcribe)
     result = runner.invoke(app, ["record", "Me"])  # no --seconds → default
     assert result.exit_code == 0, result.output
-    assert captured["seconds"] == 10.0  # f5-TTS reference cap
+    # More than the 10 s the clone keeps: a recording that stops on the timer is usually mid-word,
+    # and the spare time lets the cut fall in a pause before the cap instead.
+    assert captured["seconds"] == 12.0
 
 
 def test_record_rejects_over_10s(cli_data_dir):
@@ -105,7 +109,9 @@ def test_record_custom_passage_is_shown(cli_data_dir, monkeypatch):
 
 def test_record_no_speech_detected_errors(cli_data_dir, monkeypatch):
     monkeypatch.setattr(record_cmd, "record_audio", _fake_record)
-    monkeypatch.setattr(record_cmd, "transcribe_audio", lambda audio, sr, **kw: "   ")
+    monkeypatch.setattr(
+        record_cmd, "transcribe_reference", lambda audio, sr, **kw: Transcript(text="   ")
+    )
     result = runner.invoke(app, ["record", "Me", "--seconds", "10"])
     assert result.exit_code == 1
     assert "no speech" in result.output.lower()
@@ -127,7 +133,7 @@ def test_record_reports_missing_transcribe_dependency(cli_data_dir, monkeypatch)
     def _raise(audio, sample_rate, **kwargs):
         raise RuntimeError("transcription needs faster-whisper (the 'model' extra)")
 
-    monkeypatch.setattr(record_cmd, "transcribe_audio", _raise)
+    monkeypatch.setattr(record_cmd, "transcribe_reference", _raise)
     result = runner.invoke(app, ["record", "Me", "--seconds", "10"])
     assert result.exit_code == 1
     assert "faster-whisper" in result.output
@@ -138,10 +144,10 @@ def test_record_passes_asr_model_to_transcription(cli_data_dir, monkeypatch):
 
     def _capture(audio, sample_rate, model=None, **kwargs):
         seen["model"] = model
-        return "this is what I actually said"
+        return Transcript(text="this is what I actually said")
 
     monkeypatch.setattr(record_cmd, "record_audio", _fake_record)
-    monkeypatch.setattr(record_cmd, "transcribe_audio", _capture)
+    monkeypatch.setattr(record_cmd, "transcribe_reference", _capture)
     result = runner.invoke(app, ["record", "Me", "--seconds", "10", "--asr-model", "small.en"])
     assert result.exit_code == 0, result.output
     assert seen["model"] == "small.en"

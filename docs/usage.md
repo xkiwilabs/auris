@@ -93,20 +93,19 @@ auris record SPEAKER [--seconds N] [--passage TEXT] [--free]
 | Option | Default | Notes |
 |--------|---------|-------|
 | `SPEAKER` | (required) | Speaker name; created if new. |
-| `--seconds` | `14.0` | Recording length, 3–60 s. |
+| `--seconds` | `12.0` | Recording length, 3–30 s. The clone keeps up to 10 s, ending at a pause, so a little spare is good: a recording that stops mid-word loses that word. |
 | `--passage` | Rainbow Passage | Text shown to read aloud (guidance only — override with your own). |
 | `--free` | off | Free-form: show no passage, just say anything. |
 
 ```bash
-auris record "Me"                          # read the default passage, ~14s
+auris record "Me"                          # read the default passage, 12 s
 auris record "Me" --free --seconds 20      # say whatever you like
 auris record "Me" --passage "My own text." # read your own passage
 ```
 
 The recording is **transcribed automatically** (faster-whisper) and that transcription is
 stored as the clip's transcript — so it always matches what you actually said, whether you
-read the passage or ad-lib. The reference is silence-trimmed and capped to ~10s (under f5-TTS's
-reference limit) so audio and transcript stay aligned.
+read the passage or ad-lib. The reference is then fitted exactly as for `auris clone` below.
 
 Pick the transcription model per command with `--asr-model` (also on `auris clone`), or set
 the default with `AURIS_ASR_MODEL` — see [`auris asr`](#auris-asr) below.
@@ -151,9 +150,26 @@ auris clone "Alice" --ref alice.wav                                   # auto-tra
 auris clone "Alice" --ref alice.wav --ref-text "the exact words…"     # explicit transcript
 ```
 
-The reference is resampled to 24 kHz, silence-trimmed, and capped to ~10s before storing.
-A clip shorter than 3 seconds is rejected. ~10–15 seconds of clear speech gives the best
-clone. Auto-transcription needs the `model` extra.
+The reference is resampled to 24 kHz and fitted to **at most 10 s, ending inside a pause** — never
+part-way through a word. (A reference that stops mid-word makes f5-TTS say that word, or part of
+it, at the start of everything the voice speaks.) The transcript is the words in the part that is
+kept. If you pass `--ref-text` for a recording with speech past 10 s, the clone is refused, because
+your text would describe audio that is no longer there: trim the file, or leave the text out.
+
+A clip shorter than 3 seconds is rejected. A few sentences — 8 to 15 seconds, with natural pauses
+between them — gives the best clone; under 6 seconds still works but carries less of the voice,
+and the command says so. Auto-transcription needs the `model` extra.
+
+**Fixing older voices.** Voices cloned before this were capped blindly at 10 s, and a clip that
+ends mid-word can't be spotted from the audio alone. So on the server box, `auris voices refit`
+*tests* each voice: it speaks six sentences and listens for words that were never asked for. A
+voice with two or more is cut back to its last pause, re-tested, and fixed only if that leaks
+less. It also flags transcripts that cover little of the audio (usually noise — re-record those)
+and short clips. `--apply` stores each fix as a new clip and keeps the old one. `--retranscribe`
+also replaces transcripts the speech-to-text model now hears differently; review the report
+first, because names can go either way — name the voices to limit it
+(`auris voices refit opt001 --apply --retranscribe`). Needs the model extra; allow a few seconds
+per voice.
 
 Compressed and video formats (mp3, m4a, mp4, …) are decoded automatically with FFmpeg — no
 manual conversion needed; a video file contributes only its audio track.
@@ -244,7 +260,7 @@ auris 0.1.0
 mode:           local (model runs on this machine)
 default model:  f5_tts
 device setting: auto
-stt model:      base.en on cuda:0 (float16)
+stt model:      large-v3-turbo on cuda:0 (float16)
 data dir:       data
 torch:          2.11.0+cu128
 active device:  cuda  (cuda=True, mps=False)
@@ -313,12 +329,12 @@ transcribing.
 | Model | Params | Notes |
 |-------|--------|-------|
 | `tiny.en` | 39M | Fastest; weakest on names and numbers. |
-| `base.en` | 74M | Default — fast, fine for clean speech. |
+| `base.en` | 74M | Fast, fine for clean speech; the light choice on a CPU. |
 | `distil-small.en` | 166M | Distilled: `small.en` accuracy near `base.en` speed. |
 | `small.en` | 244M | Good accuracy/speed balance. |
 | `medium.en` | 769M | High accuracy, English-only. |
 | `distil-large-v3` | 756M | Near `large-v3` accuracy, much faster. |
-| `large-v3-turbo` | 809M | Best accuracy here; multilingual. |
+| `large-v3-turbo` | 809M | Default — best accuracy here; multilingual. |
 
 Anything not already downloaded is fetched from HuggingFace on first use, so `auris asr pull`
 is worth running ahead of time. Weights land in the normal HuggingFace cache
@@ -380,7 +396,7 @@ override only if you need to.
 | `AURIS_DEFAULT_MODEL` | `f5_tts` | Model used for new speakers. |
 | `AURIS_DEFAULT_SPEED` | `1.0` | Default speaking rate. |
 | `AURIS_SAMPLE_RATE` | `24000` | Internal/output sample rate (Hz). |
-| `AURIS_ASR_MODEL` | `base.en` | Speech-to-text model for reference transcripts (`auris asr list`). |
+| `AURIS_ASR_MODEL` | `large-v3-turbo` | Speech-to-text model for reference transcripts (`auris asr list`). `base.en` on a CPU-only machine. |
 | `AURIS_ASR_DEVICE` | `auto` | `auto` uses the GPU when one is visible. `cpu`, `cuda`, `cuda:1`. |
 | `AURIS_ASR_COMPUTE_TYPE` | `auto` | `float16` on GPU, `int8` on CPU. Override with e.g. `int8_float16`. |
 | `AURIS_ASR_MODELS` | *(catalogue)* | Comma-separated allowlist of ids remote callers may request. |

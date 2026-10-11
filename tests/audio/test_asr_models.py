@@ -34,6 +34,7 @@ def test_unknown_model_is_rejected():
 
 
 def test_allowlist_narrows_the_catalogue(monkeypatch):
+    monkeypatch.setenv("AURIS_ASR_MODEL", "base.en")  # inside the list, so nothing is added
     monkeypatch.setenv("AURIS_ASR_MODELS", "base.en, small.en")
     settings = load_settings()
     assert settings.asr_allowed == ("base.en", "small.en")

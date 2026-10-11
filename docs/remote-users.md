@@ -123,10 +123,15 @@ This is the easy way. No setup, no code.
 
    - **Voices** — a library of cards: every voice you can use, cloned voices first, then the
      built-in presets. Search by name. Press ▶ on a card to hear a sample, or click the card to
-     open its panel: a waveform player, its **clips** (duration + transcript, ✕ to delete one —
-     the last clip can't be deleted, since a voice needs at least one to speak), **+ Add a clip**,
-     the **Shared with everyone** switch (on voices you own), and **⋯** for rename and delete.
-     **+ New voice** opens a dialog to record (stops itself at 10 seconds) or upload a clip.
+     open its panel: a waveform player, its **clips** (duration + transcript, ▶ to hear the stored
+     recording the clone copies, ✕ to delete one — the last clip can't be deleted, since a voice
+     needs at least one to speak), **+ Add a clip**, the **Shared with everyone** switch (on voices
+     you own), and **⋯** for rename and delete. **+ New voice** opens a dialog to record or upload
+     a clip. It suggests a passage to read (optional — **Show another** for a different one; the
+     recording is transcribed either way). Recording starts with a short countdown while the mic
+     is already listening, then runs until you press stop (30 s at most): talk for 8–15 seconds in
+     a few sentences. The clone keeps up to 10 s and ends it at a pause, so a word is never cut in
+     half; if the clip came out short, or had no pause to cut in, a note under the voice says so.
    - **Synthesize** — type text, pick a voice, speed, **Full file** or **Stream**, and a format;
      **▶ Speak** (or Ctrl+Enter). The result plays in a waveform player with **⤓ Save**.
    - **Transcribe** — drop an audio file (or record from the mic — no 10-second cap here, that
@@ -134,7 +139,9 @@ This is the easy way. No setup, no code.
      for word timestamps, then **Transcribe**. Copy the text or download `.txt`, `.srt` or `.vtt`.
    - **Settings** — what the server is running (models, devices, limits, allowed transcription
      models), plus your own preferences (default voice, speed, format — saved in this browser
-     only, never sent anywhere but with your requests). If you're an admin, an **API keys**
+     only, never sent anywhere but with your requests). What you last picked on **Synthesize** and
+     **Transcribe** is remembered as these same defaults. They are kept per page address, so
+     `auris dashboard` (`http://127.0.0.1:8765`) and the server's own address keep separate sets. If you're an admin, an **API keys**
      section here lets you issue a key for any account and see or revoke anyone's key.
    - **Account** — change your password (this ends any other browser's session for your account),
      and issue, rotate or revoke your own API keys for scripts/agents. See
@@ -150,7 +157,7 @@ This is the easy way. No setup, no code.
 
    > **If Record is blocked** on this page (plain `http` can't use the mic): use the **`auris`
    > client** and run **`auris dashboard`** — it serves the dashboard from `localhost`, where the
-   > mic works (see section 0 above). Or just **upload an audio file** (record ~10 s in any app).
+   > mic works (see section 0 above). Or just **upload an audio file** (record 8–15 s in any app).
 
 > 💡 **Just want to hear something now?** Pick a **`[preset]`** voice like `narrator-uk-f` or
 > `calm-m`, type a sentence, and press Speak. Presets need no cloning — cloning is only for adding

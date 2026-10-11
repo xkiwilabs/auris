@@ -6,7 +6,7 @@
 "use strict";
 import { api, setMsg } from "./api.js";
 import { playPcmStream, encodeWav, concatF32 } from "./audio.js";
-import { loadPrefs } from "./prefs.js";
+import { loadPrefs, setPref } from "./prefs.js";
 import { charState, mmss, usableVoices } from "./view-logic.js";
 import { avatarEl } from "./avatar.js";
 import { createPlayer } from "./player.js";
@@ -172,7 +172,22 @@ function showModeRules() {
 
 function applyPrefs(p) {
   $("speed").value = p.speed; $("format-select").value = p.format; $("mode-select").value = p.mode;
+  const sel = $("voice-select");
+  if (p.voice && p.voice !== sel.value && [...sel.options].some((o) => o.value === p.voice)) {
+    sel.value = p.voice;
+    showVoiceAvatar();
+  }
   syncMode(); syncFormat(); showSpeed(); showModeRules();
+}
+
+// What you pick here is remembered (prefs.js), so a reload or a restarted `auris dashboard` comes
+// back to it — and the Settings page shows it as the default. Setting a value in code fires no
+// `change`, so applyPrefs answering the `auris:prefs` event this sends can't loop.
+function rememberChoices() {
+  $("voice-select").addEventListener("change", () => setPref("voice", $("voice-select").value));
+  $("speed").addEventListener("change", () => setPref("speed", parseFloat($("speed").value) || 1.0));
+  $("format-select").addEventListener("change", () => setPref("format", $("format-select").value));
+  $("mode-select").addEventListener("change", () => setPref("mode", $("mode-select").value));
 }
 
 function syncVoices(state) {
@@ -197,6 +212,7 @@ export async function initSynth(state) {
   document.addEventListener("auris:voices", () => syncVoices(state));
   document.addEventListener("auris:prefs", (e) => applyPrefs(e.detail));
   $("voice-select").addEventListener("change", showVoiceAvatar);
+  rememberChoices();
   $("mode-select").addEventListener("change", showModeRules);
   $("speed").addEventListener("input", showSpeed);
   $("text-input").addEventListener("input", updateCount);

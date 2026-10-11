@@ -37,6 +37,7 @@ class CloneResponse(BaseModel):
     clip_index: int
     transcript: str
     duration_s: float
+    warnings: list[str] = []  # e.g. a short clip, or one with no pause to cut in
 
 
 class ClipInfo(BaseModel):

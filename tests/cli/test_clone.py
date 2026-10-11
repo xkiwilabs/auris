@@ -6,6 +6,8 @@ import numpy as np
 import soundfile as sf
 from typer.testing import CliRunner
 
+from auris.audio.transcript import Transcript
+
 import auris.cli.commands.clone as clone_cmd
 from auris.cli.main import app
 from auris.config import load_settings
@@ -50,7 +52,9 @@ def test_clone_stores_clip_and_transcript(cli_data_dir):
 
 def test_clone_auto_transcribes_when_ref_text_omitted(cli_data_dir, monkeypatch):
     monkeypatch.setattr(
-        clone_cmd, "transcribe_audio", lambda audio, sr, **kw: "auto transcribed text"
+        clone_cmd,
+        "transcribe_reference",
+        lambda audio, sr, **kw: Transcript(text="auto transcribed text"),
     )
     ref = cli_data_dir / "ref.wav"
     _write_ref(ref)
@@ -95,9 +99,9 @@ def test_clone_passes_asr_model_to_transcription(cli_data_dir, monkeypatch):
 
     def _capture(audio, sample_rate, model=None, **kwargs):
         seen["model"] = model
-        return "auto transcribed text"
+        return Transcript(text="auto transcribed text")
 
-    monkeypatch.setattr(clone_cmd, "transcribe_audio", _capture)
+    monkeypatch.setattr(clone_cmd, "transcribe_reference", _capture)
     ref = cli_data_dir / "ref.wav"
     _write_ref(ref)
     assert runner.invoke(app, ["speakers", "add", "Me"]).exit_code == 0

@@ -2,7 +2,7 @@
 "use strict";
 import { api, setMsg, fmtSeconds } from "./api.js";
 import { recordClip, micAvailable, durationOf } from "./audio.js";
-import { loadPrefs } from "./prefs.js";
+import { loadPrefs, setPref } from "./prefs.js";
 import { toSrt, toVtt, clock } from "./transcript-format.js";
 import { mmss, fmtBytes } from "./view-logic.js";
 import { attachDropzone } from "./dropzone.js";
@@ -118,7 +118,18 @@ export async function initTranscribe(state) {
   }
   fillModels(state);
   $("stt-language").value = loadPrefs().language || "auto";
-  document.addEventListener("auris:prefs", () => fillModels(state));
+  document.addEventListener("auris:prefs", (e) => {
+    fillModels(state);
+    $("stt-language").value = e.detail.language || "auto";
+  });
+  // Remembered like the Settings defaults (which show them). Picking the server's own default
+  // stores "" — "server default" — so the choice follows the server if its default changes.
+  $("stt-model").addEventListener("change", () => {
+    const v = $("stt-model").value;
+    setPref("asrModel", state.models && v === state.models.default ? "" : v);
+  });
+  $("stt-language").addEventListener("change", () =>
+    setPref("language", $("stt-language").value.trim() || "auto"));
   if (window.isSecureContext && micAvailable()) $("stt-record-btn").style.display = "";
   $("stt-record-btn").onclick = toggleRecord;
   attachDropzone($("stt-drop"), $("stt-file"), (f) => { setMsg($("stt-msg"), "", ""); showFile(f); },

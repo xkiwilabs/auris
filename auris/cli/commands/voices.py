@@ -5,12 +5,19 @@ from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 import aiosqlite
+import numpy as np
+import soundfile as sf
 import typer
 
+from auris.audio import io, reference
+from auris.audio.transcribe import transcribe_detailed, transcribe_reference
+from auris.audio.transcript import TranscribeOptions
 from auris.client.api import ClientError
 from auris.client.mode import remote_client
 from auris.config import load_settings
-from auris.voice_library import db, speakers, users
+from auris.models import build_model
+from auris.models.base import PreparedReference
+from auris.voice_library import cloning, db, speakers, storage, users
 from auris.voice_library.exceptions import AmbiguousVoice, NameTaken
 from auris.voice_library.resolve import describe_ambiguity, preset_voice_rows
 
@@ -19,8 +26,10 @@ app = typer.Typer(help="List and manage voices.", invoke_without_command=True)
 T = TypeVar("T")
 
 
-def _refuse_if_remote() -> None:
-    """`adopt` writes the *server's* own speakers table, so it only means anything on the box.
+def _refuse_if_remote(
+    command: str = "adopt", does: str = "assigns ownership in the server's own database"
+) -> None:
+    """`adopt` and `refit` write the *server's* own library, so they only mean anything on the box.
 
     Mirrors `auris users`/`auris keys`: there is no remote fallback to take, because writing the
     client machine's own `data/auris.db` would look like success while the server never reads it.
@@ -29,9 +38,8 @@ def _refuse_if_remote() -> None:
     if client is None:
         return
     typer.echo(
-        "auris voices adopt assigns ownership in the server's own database, so it must run on "
-        f"the server box.\nThis machine is configured against {client.base_url} — run it there "
-        "instead.",
+        f"auris voices {command} {does}, so it must run on the server box.\nThis machine is "
+        f"configured against {client.base_url} — run it there instead.",
         err=True,
     )
     raise typer.Exit(code=1)
@@ -358,3 +366,180 @@ def adopt(
 
     count = _run(go)
     typer.echo(f"adopted {count} voice(s) for {email}")
+
+
+# Fewer words a second than this and the transcript cannot be describing the audio — Whisper
+# hallucinating "Thank you." over noise or music. Conversational English runs at 2–3 a second.
+_SPARSE_WORDS_PER_S = 0.8
+
+# What refit has each voice say, listening for words that were never asked for. Varied openings,
+# because a leak is the reference's last word glued to the start of whatever comes next.
+PROBE_TEXTS = (
+    "The weather today is cold and windy.",
+    "Please remember to bring your laptop to the meeting tomorrow morning.",
+    "We measured reaction times across three conditions.",
+    "Thank you all for coming along this afternoon.",
+    "Every Tuesday the library opens a little later than usual.",
+    "Our results suggest that practice improves performance.",
+)
+# An intact reference still leaks now and then (1 in 24 on a measured voice), so one stray word
+# in six is noise; two or more is a reference worth cutting back (a clipped one leaked in 22/24).
+LEAK_LIMIT = 2
+
+
+def _same_words(a: str, b: str) -> bool:
+    norm = lambda t: " ".join("".join(c for c in t.casefold() if c.isalnum() or c in " '").split())  # noqa: E731
+    return norm(a) == norm(b)
+
+
+def _load_probe_model(settings):
+    """The f5-TTS model refit listens through. Its own seam so tests never load weights."""
+    model = build_model("f5_tts", settings)
+    model.load()
+    return model
+
+
+def _leaks(model, settings, audio: np.ndarray, sr: int, transcript: str) -> int:
+    """How many of PROBE_TEXTS come back with words that were never asked for."""
+    ref = PreparedReference(audio=audio, sample_rate=sr, transcript=transcript)
+    heard_opts = TranscribeOptions(language="en", vad_filter=False)
+    count = 0
+    for text in PROBE_TEXTS:
+        wav = model.synthesise(text, ref)
+        heard = transcribe_detailed(wav, model.sample_rate, heard_opts, settings).text
+        count += bool(reference.extra_leading_words(text, heard))
+    return count
+
+
+@app.command("refit")
+def refit(
+    ctx: typer.Context,
+    names: list[str] = typer.Argument(None, help="Voices to check (default: every voice)"),
+    owner: str | None = typer.Option(None, "--owner", help="Only this account's voices"),
+    apply: bool = typer.Option(False, "--apply", help="Store the fixes (default: report only)"),
+    retranscribe: bool = typer.Option(
+        False, "--retranscribe", help="Also replace transcripts the model now hears differently"
+    ),
+    asr_model: str = typer.Option(
+        None, "--asr-model", help="Speech-to-text model (default: AURIS_ASR_MODEL)"
+    ),
+) -> None:
+    """Test every voice for stray words and fix the ones whose reference makes them.
+
+    A reference that ends part-way through a word makes the voice say that word (or part of it)
+    before whatever it was asked to say. Nothing in the audio reliably shows a cut word, so each
+    voice is simply *tested*: it speaks six sentences and a speech-to-text model listens for
+    words that were never asked for. A voice with two or more is cut back to an earlier pause,
+    re-tested, and fixed only if that leaks less. Report only unless --apply. Applying adds a
+    new clip (synthesis uses the newest) and keeps the old one, so deleting it undoes the fix.
+    Needs the model extra and runs both models, so allow a few seconds per voice.
+    """
+    owner = _owner_for(ctx, owner)
+    _refuse_if_remote("refit", "re-cuts reference clips in the server's own voice library")
+    settings = load_settings()
+    n = len(PROBE_TEXTS)
+
+    async def go(conn: aiosqlite.Connection) -> tuple[int, int]:
+        if names:
+            targets = [await _resolve_write_target(conn, name, owner) for name in names]
+        else:
+            targets = await speakers.list_all(conn)
+            if owner is not None:
+                owner_id = await users.get_user_id_or_raise(conn, owner)
+                targets = [sp for sp in targets if sp.owner_id == owner_id]
+        emails = await users.emails_by_id(conn, {sp.owner_id for sp in targets if sp.owner_id})
+        try:
+            model = await asyncio.to_thread(_load_probe_model, settings) if targets else None
+        except (ImportError, RuntimeError) as exc:
+            raise ValueError(
+                f"refit speaks with f5-TTS, which needs the model extra "
+                f"(scripts/install.sh --model): {exc}"
+            ) from exc
+        fixes = applied = 0
+        for sp in targets:
+            clips = await speakers.get_clips(conn, sp.id)
+            if not clips:
+                continue
+            clip = clips[-1]
+            label = sp.name + (f" ({emails.get(sp.owner_id, sp.owner_id)})" if sp.owner_id else "")
+            path = storage.clips_dir(settings.voices_dir, sp.id) / clip.filename
+            try:  # one unreadable clip is reported, and the rest are still checked
+                audio, sr = await asyncio.to_thread(io.load_audio, path)
+                decoded = await asyncio.to_thread(
+                    transcribe_reference,
+                    reference.decode_window(audio, sr),
+                    sr,
+                    asr_model,
+                    settings,
+                )
+            except (RuntimeError, OSError, sf.SoundFileError) as exc:
+                typer.echo(f"{label}: {clip.filename}\n  skipped: {exc}")
+                continue
+            seconds = len(audio) / sr
+            typer.echo(f"{label}: {clip.filename}, {seconds:.2f} s")
+            if len(decoded.text.split()) / max(seconds, 1e-6) < _SPARSE_WORDS_PER_S:
+                typer.echo(
+                    f"  re-record: the transcript ({decoded.text.strip()!r}) covers little of the "
+                    "audio — usually noise or music rather than speech"
+                )
+                continue
+            fixed: tuple[np.ndarray, str] | None = None
+            leaks = await asyncio.to_thread(_leaks, model, settings, audio, sr, clip.transcript)
+            if leaks >= LEAK_LIMIT:
+                words = [w for seg in decoded.segments for w in seg.words]
+                fit = reference.fit_reference(audio, sr, words or None)
+                if fit.dropped_speech and fit.transcript:
+                    after = await asyncio.to_thread(
+                        _leaks, model, settings, fit.audio, sr, fit.transcript
+                    )
+                    if after < leaks:
+                        fixed = (fit.audio, fit.transcript)
+                        typer.echo(
+                            f"  stray words in {leaks}/{n} test sentences; cut back to "
+                            f"{len(fit.audio) / sr:.2f} s at a pause: {after}/{n}\n"
+                            f"    was: {clip.transcript}\n    now: {fit.transcript}"
+                        )
+                    else:
+                        typer.echo(
+                            f"  stray words in {leaks}/{n} test sentences, and cutting back to "
+                            f"the last pause didn't help ({after}/{n}) — re-record this voice"
+                        )
+                else:
+                    typer.echo(
+                        f"  stray words in {leaks}/{n} test sentences, and there's no earlier "
+                        "pause to cut back to — re-record this voice"
+                    )
+            elif decoded.text.strip() and not _same_words(clip.transcript, decoded.text):
+                note = "" if retranscribe else " (--retranscribe to use it)"
+                typer.echo(
+                    f"  ok ({leaks}/{n} stray); transcript differs{note}\n"
+                    f"    was: {clip.transcript}\n    now: {decoded.text.strip()}"
+                )
+                if retranscribe:
+                    fixed = (audio, decoded.text.strip())
+            else:
+                typer.echo(f"  ok ({leaks}/{n} stray)")
+            if seconds < reference.GOOD_LENGTH_S:
+                typer.echo(
+                    f"  short: {reference.GOOD_LENGTH_S:.0f}–10 s of speech would capture the "
+                    "voice better"
+                )
+            if fixed is None:
+                continue
+            fixes += 1
+            if apply:
+                kept, text = fixed
+                index = await cloning.add_reference(
+                    conn, settings.voices_dir, sp.id, kept, sr, text, len(kept) / sr
+                )
+                typer.echo(f"  stored clip_{index:03d}.wav (the old clip is kept)")
+                applied += 1
+        return fixes, applied
+
+    fixes, applied = _run(go)
+    if apply:
+        typer.echo(f"\n{applied} voice(s) refit.")
+    elif fixes:
+        typer.echo(f"\nDry run — nothing changed. Run again with --apply to fix {fixes} voice(s).")
+    else:
+        typer.echo("\nDry run — nothing to fix.")

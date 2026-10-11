@@ -73,9 +73,11 @@ testing — which is exactly the kind of bug that costs an afternoon.
 
 The maintainers run a browser acceptance pass by hand, driven through the Claude-in-Chrome
 extension from a runbook kept with the development tooling rather than in this repository. It
-starts a throwaway server, opens a tab, and walks forty-two journeys — email/password sign-in
+starts a throwaway server, opens a tab, and walks forty-seven journeys — email/password sign-in
 (good and bad), every page, the voice library (sample, add a clip, delete a middle clip, the
-last-clip refusal, rename, search), the New voice dialog, synthesis full and streamed (and
+last-clip refusal, rename, search, playing a stored reference clip), the New voice dialog (its
+reading passages and the clone's warnings), remembered Synthesize and Transcribe choices, synthesis
+full and streamed (and
 stopped mid-stream), transcription with srt/vtt export, settings and its jump links, a user's own
 key from the Account page (issue, rotate, revoke), the admin-only Users page (create and disable
 an account), a fresh account's forced password change blocking every page until it's done,

@@ -43,7 +43,7 @@ def test_clone_with_ref_text_echoes_it_and_caps_at_ten_seconds(admin, voice):
     clips = admin.get(f"/v1/voices/{voice}/clips").json()
     assert len(clips) == 1
     assert clips[0]["transcript"] == REFERENCE_TEXT
-    # prepare_reference caps references at 10 s — deliberately, see docs/architecture.md.
+    # References are capped at 10 s, cut in a pause — deliberately, see docs/architecture.md.
     assert 3.0 <= clips[0]["duration_s"] <= 10.0
 
 

@@ -393,3 +393,55 @@ def test_cloning_onto_a_name_another_account_holds_privately_creates_your_own(
     for who, email in ((alice, "alice@example.com"), (bob, "bob@example.com")):
         rows = [v for v in as_user(who).get("/v1/voices").json() if v["name"] == "narrator"]
         assert [v["owner"] for v in rows] == [email]
+
+
+# --- GET /v1/voices/{name}/clips/{index}/audio: hearing a stored reference clip --------------
+
+
+def _clip_index(c, name):
+    (clip,) = c.get(f"/v1/voices/{name}/clips").json()
+    return clip["index"]
+
+
+def test_the_owner_can_play_back_their_reference_clip(seed_user, seed_voice, as_user):
+    alice = seed_user("alice@example.com")
+    seed_voice("mine", alice, visibility="private")
+    c = as_user(alice)
+    r = c.get(f"/v1/voices/mine/clips/{_clip_index(c, 'mine')}/audio")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "audio/wav"
+    assert r.content[:4] == b"RIFF" and r.content[8:12] == b"WAVE"
+
+
+@pytest.mark.parametrize(
+    "visibility,expected_status",
+    [("shared", 200), ("private", 404)],
+    ids=["shared-is-readable", "private-is-invisible"],
+)
+def test_another_users_clip_plays_only_if_their_voice_is_shared(
+    seed_user, seed_voice, as_user, visibility, expected_status
+):
+    # The same rule as listing the clips: readable when shared, and a private voice answers 404,
+    # never 403, so the status code can't confirm that the name exists.
+    bob = seed_user("bob@example.com")
+    alice = seed_user("alice@example.com")
+    seed_voice("bobs-voice", bob, visibility=visibility)
+    index = _clip_index(as_user(bob), "bobs-voice")
+    assert as_user(alice).get(f"/v1/voices/bobs-voice/clips/{index}/audio").status_code == (
+        expected_status
+    )
+
+
+def test_a_clip_that_does_not_exist_is_a_404(seed_user, seed_voice, as_user):
+    alice = seed_user("alice@example.com")
+    seed_voice("mine", alice)
+    assert as_user(alice).get("/v1/voices/mine/clips/999/audio").status_code == 404
+
+
+def test_playing_a_clip_needs_a_signed_in_caller(seed_user, seed_voice, as_user):
+    alice = seed_user("alice@example.com")
+    seed_voice("mine", alice)
+    c = as_user(alice)
+    index = _clip_index(c, "mine")
+    c.cookies.clear()
+    assert c.get(f"/v1/voices/mine/clips/{index}/audio").status_code == 401

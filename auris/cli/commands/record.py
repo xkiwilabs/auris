@@ -7,9 +7,9 @@ import numpy as np
 import soundfile as sf
 import typer
 
-from auris.audio import io
+from auris.audio import io, reference
 from auris.audio.record import record_audio
-from auris.audio.transcribe import transcribe_audio
+from auris.audio.transcribe import transcribe_reference
 from auris.client.api import ClientError
 from auris.client.mode import remote_client
 from auris.config import Settings, load_settings
@@ -47,11 +47,12 @@ async def _persist(
 def record(
     speaker: str = typer.Argument(..., help="Speaker name (created if it doesn't exist)"),
     seconds: float = typer.Option(
-        10.0,
+        12.0,
         "--seconds",
         min=3.0,
-        max=10.0,
-        help="Recording length in seconds (max 10 — f5-TTS caps references at ~10s)",
+        max=30.0,
+        help="How long to record. The clone keeps up to 10 s, ending at a pause, so leave a "
+        "little spare: a recording that stops mid-word loses that word",
     ),
     passage: str = typer.Option(
         RAINBOW_PASSAGE, "--passage", help="Text to read aloud (guidance only)"
@@ -73,7 +74,10 @@ def record(
     else:
         typer.echo("Read this passage aloud, clearly and at a natural pace:\n")
         typer.echo(f"    {passage}\n")
-    typer.echo(f"Recording {seconds:.0f}s from your default microphone. Speak now!")
+    typer.echo(
+        f"Recording {seconds:.0f}s from your default microphone. Speak now — it's fine to "
+        "finish early; the clone keeps up to 10 s, ending at a pause."
+    )
 
     def _tick(remaining: int) -> None:
         # Overwrite the same line each second for a live countdown.
@@ -100,20 +104,24 @@ def record(
             f"Recorded and uploaded {res['voice']}: clip {res['clip_index']} "
             f'("{res["transcript"]}")'
         )
+        for warning in res.get("warnings", []):
+            typer.echo(f"note: {warning}", err=True)
         return
 
-    audio = io.prepare_reference(
-        audio, settings.sample_rate
-    )  # trim + cap to ≤10s (safely under f5-TTS's ~12s limit)
     typer.echo("Transcribing…")
     try:
-        transcript = transcribe_audio(audio, settings.sample_rate, model=asr_model)
-    except RuntimeError as exc:
+        window = reference.decode_window(audio, settings.sample_rate)
+        decoded = transcribe_reference(window, settings.sample_rate, model=asr_model)
+        # Trim + cap to ≤10 s, cut inside a pause (see auris/audio/reference.py for why).
+        clip = reference.reference_for_clone(
+            audio, settings.sample_rate, ref_text=None, decoded=decoded
+        )
+    except (ValueError, RuntimeError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1)
-    if not transcript.strip():
-        typer.echo("no speech detected — please try again", err=True)
-        raise typer.Exit(code=1)
+    for warning in clip.warnings:
+        typer.echo(f"note: {warning}", err=True)
+    audio, transcript = clip.audio, clip.transcript
 
     name, index = asyncio.run(_persist(settings, speaker, audio, transcript))
     typer.echo(f"Recorded and cloned {name}: stored clip_{index:03d}.wav")

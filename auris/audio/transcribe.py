@@ -139,6 +139,20 @@ def transcribe_detailed(
     return run_whisper(whisper, audio, sample_rate, options)
 
 
+def transcribe_reference(
+    audio: np.ndarray,
+    sample_rate: int,
+    model: str | None = None,
+    settings: Settings | None = None,
+) -> Transcript:
+    """The cloning decode on the local path: `reference.clone_options` (English, no VAD, word
+    timestamps), so `reference.reference_for_clone` can cut in a pause and keep only the words
+    that survive the cut. The server runs the same options through its TranscriptionPool."""
+    from auris.audio.reference import clone_options
+
+    return transcribe_detailed(audio, sample_rate, clone_options(model), settings)
+
+
 def transcribe_audio(
     audio: np.ndarray,
     sample_rate: int,

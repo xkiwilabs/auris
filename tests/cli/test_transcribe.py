@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 import auris.cli.commands.transcribe as transcribe_cmd
 from auris.audio.transcript import Segment, Transcript
+from auris.audio.asr_models import DEFAULT_MODEL
 from auris.cli.main import app
 
 runner = CliRunner()
@@ -287,4 +288,4 @@ def test_local_accepts_the_openai_whisper_1_alias(tmp_path, monkeypatch):
     wav = _write_wav(tmp_path / "a.wav")
     result = runner.invoke(app, ["transcribe", str(wav), "--asr-model", "whisper-1"])
     assert result.exit_code == 0, result.output
-    assert seen["model"] == "base.en"
+    assert seen["model"] == DEFAULT_MODEL

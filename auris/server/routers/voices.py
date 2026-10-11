@@ -7,10 +7,10 @@ from pathlib import Path
 
 import soundfile as sf
 from fastapi import APIRouter, Depends, Form, Request, Response, UploadFile
+from fastapi.responses import FileResponse
 
-from auris.audio import io
+from auris.audio import io, reference
 from auris.audio.asr_models import resolve_asr_model
-from auris.audio.transcript import TranscribeOptions
 from auris.log import get_logger
 from auris.server import voice_access
 from auris.server.asr_pool import TranscriptionJob
@@ -100,24 +100,28 @@ async def clone_voice(
     if io.duration_s(audio, settings.sample_rate) < _MIN_CLIP_SECONDS:
         raise ValueError(f"reference must be at least {_MIN_CLIP_SECONDS:.0f}s")
 
-    audio = io.prepare_reference(audio, settings.sample_rate)  # trim + ≤10s cap
-    seconds = io.duration_s(audio, settings.sample_rate)
-    transcript = ref_text
-    if not transcript:
+    decoded = None
+    if not ref_text:
         # The pool is resolved here, not as a route dependency: a clone that supplies
         # ref_text needs no decode, so an STT-disabled server must still accept it
         # (get_asr_pool raises PipelineDisabled => 503 only on this branch).
         asr_pool = get_asr_pool(request)
-        # Cloning pins language to "en" on purpose: an accented reference that
-        # auto-detected as another language would degrade f5's conditioning.
-        job = TranscriptionJob(
-            audio,
-            settings.sample_rate,
-            TranscribeOptions(model=stt_model, language="en", vad_filter=False),
-        )
-        transcript = (await asr_pool.submit(job)).text
-    if not transcript.strip():
-        raise ValueError("no speech detected in the reference audio")
+        # Word timestamps, so the cut lands in a pause and the transcript covers exactly the
+        # words kept; English and no VAD on purpose (see reference.clone_options).
+        window = reference.decode_window(audio, settings.sample_rate)
+        job = TranscriptionJob(window, settings.sample_rate, reference.clone_options(stt_model))
+        decoded = await asr_pool.submit(job)
+    # Trim + cap to ≤10 s, ending inside a pause — never part-way through a word, which is
+    # what makes f5-TTS speak a stray word at the start of every generation.
+    clip = await asyncio.to_thread(
+        reference.reference_for_clone,
+        audio,
+        settings.sample_rate,
+        ref_text=ref_text,
+        decoded=decoded,
+    )
+    audio, transcript = clip.audio, clip.transcript
+    seconds = io.duration_s(audio, settings.sample_rate)
 
     # A clone names a voice, but the name is only unique per owner now: someone else may already
     # have a voice by this name. find_for_clone raises Forbidden if the caller may not write it,
@@ -132,7 +136,11 @@ async def clone_voice(
         conn, settings.voices_dir, speaker.id, audio, settings.sample_rate, transcript, seconds
     )
     return CloneResponse(
-        voice=speaker.name, clip_index=index, transcript=transcript, duration_s=seconds
+        voice=speaker.name,
+        clip_index=index,
+        transcript=transcript,
+        duration_s=seconds,
+        warnings=list(clip.warnings),
     )
 
 
@@ -170,6 +178,32 @@ async def list_clips(request: Request, name: str, owner: str | None = None, conn
         )
         for c in await voice_access.get_clips(conn, speaker.id)
     ]
+
+
+@router.get("/v1/voices/{name}/clips/{index}/audio")
+async def clip_audio(
+    request: Request,
+    name: str,
+    index: int,
+    owner: str | None = None,
+    conn=Depends(get_db),
+    settings=Depends(get_settings),
+):
+    """The stored reference clip itself, so the dashboard can play back what a voice copies.
+
+    Read access, exactly as listing the clips: shared voices are readable by everyone, and
+    another account's private one is a 404 (from get_for_read), not a 403."""
+    viewer = _viewer(request)
+    speaker = await voice_access.get_for_read(
+        conn, name, viewer, await voice_access.owner_id_for(conn, owner)
+    )
+    filename = f"clip_{index:03d}.wav"
+    if await voice_access.get_clip_by_filename(conn, speaker.id, filename) is None:
+        raise ClipNotFound(f"clip {index} not found for {name!r}")
+    path = storage.clips_dir(settings.voices_dir, speaker.id) / filename
+    if not path.is_file():  # a row whose WAV has gone: the same answer as no row at all
+        raise ClipNotFound(f"clip {index} not found for {name!r}")
+    return FileResponse(path, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
 
 @router.delete("/v1/voices/{name}/clips/{index}")

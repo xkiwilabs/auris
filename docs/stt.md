@@ -62,7 +62,7 @@ auris transcribe [AUDIO_FILE] [--out FILE] [--format FMT] [--asr-model ID]
 | `--out` | stdout | Write the transcript to this file instead of printing it. |
 | `--format` | `text` | `text`, `json`, `verbose_json`, `srt`, `vtt` — the same set the HTTP API renders. |
 | `--asr-model` | `AURIS_ASR_MODEL` | Which speech-to-text model to use (`auris asr list`). In remote mode, the service's default. |
-| `--language` | auto-detect | A language code (`en`, `fr`, `de`, …), or `auto`. Needs a multilingual model — the default `base.en` ignores it. |
+| `--language` | auto-detect | A language code (`en`, `fr`, `de`, …), or `auto`. Needs a multilingual model — an `.en` model ignores it. |
 | `--translate` | off | Translate into English instead of transcribing verbatim. Needs a multilingual model too. |
 | `--word-timestamps` | off | Add per-word timings. Only `verbose_json` shows them. |
 | `--prompt` | (none) | Bias the spelling of names and jargon, e.g. `--prompt "auris, f5-TTS"`. |
@@ -101,16 +101,16 @@ auris asr list
 ```
 
 ```
-active: base.en on cuda:0 (float16)
+active: large-v3-turbo on cuda:0 (float16)
 allowed for remote callers: tiny.en, base.en, distil-small.en, small.en, medium.en, distil-large-v3, large-v3-turbo
 
    tiny.en             39M  en    downloaded     fastest; weakest on names and numbers
- * base.en             74M  en    downloaded     default — fast, fine for clean speech
+   base.en             74M  en    downloaded     fast, fine for clean speech; the light choice on a CPU
    distil-small.en    166M  en    not downloaded distilled: small.en accuracy near base.en speed
    small.en           244M  en    downloaded     good accuracy/speed balance
    medium.en          769M  en    not downloaded high accuracy, English-only
    distil-large-v3    756M  en    not downloaded near large-v3 accuracy, much faster
-   large-v3-turbo     809M  multi downloaded     best accuracy here; multilingual
+ * large-v3-turbo     809M  multi downloaded     default — best accuracy here; multilingual
 
 Set the default with AURIS_ASR_MODEL, the device with AURIS_ASR_DEVICE.
 ```
@@ -118,11 +118,12 @@ Set the default with AURIS_ASR_MODEL, the device with AURIS_ASR_DEVICE.
 The `downloaded` / `not downloaded` column is whatever happens to be in *your* HuggingFace cache,
 so yours will differ from the sample above.
 
-Smallest first; the `.en` models are English-only, `large-v3-turbo` is the multilingual one. The
-default `base.en` is tuned for the short, clean reference clips cloning produces. **For real
-transcription work, use `small.en`** — it is markedly better on names, numbers and casual speech
-and still comfortably real-time on a GPU. Reach for `distil-large-v3` or `large-v3-turbo` when
-accuracy matters more than throughput, and `large-v3-turbo` whenever the audio isn't English.
+Smallest first; the `.en` models are English-only, `large-v3-turbo` is the multilingual one, and
+the default. It is the most accurate here, and accuracy matters most for cloning: f5-TTS treats
+the reference transcript as ground truth, so a misheard name is baked into every sentence that
+voice speaks. On a GPU it costs well under a second per clip and about 1.6 GB per resident worker.
+**On a CPU-only machine**, set `AURIS_ASR_MODEL=base.en` or `small.en` — turbo still works there,
+just slowly.
 
 Anything not already downloaded is fetched from HuggingFace on first use, which stalls that first
 request. Pre-pull instead:
@@ -143,14 +144,11 @@ In remote mode `auris asr list` asks the *service* which models it accepts (the 
 
 ## Language, translation and prompts
 
-> **`--language` and `--translate` need a multilingual model.** The default `AURIS_ASR_MODEL` is
-> `base.en`, and every `.en` model in the catalogue is English-only. faster-whisper does **not**
-> error on those — it quietly ignores `language` and decodes `translate` as an ordinary
-> transcription — so both flags are no-ops on a default install. `large-v3-turbo` is the one
-> multilingual model in the catalogue; select it per command with `--asr-model large-v3-turbo`
-> or for good with `AURIS_ASR_MODEL=large-v3-turbo`, and pull it first
-> (`auris asr pull large-v3-turbo`). A reported language of `en` from an `.en` model tells you
-> nothing: it is the only answer that model can give.
+> **`--language` and `--translate` need a multilingual model.** The default, `large-v3-turbo`,
+> is one; every `.en` model in the catalogue is English-only. faster-whisper does **not** error on
+> those — it quietly ignores `language` and decodes `translate` as an ordinary transcription — so
+> both flags are no-ops when you pick an `.en` model. A reported language of `en` from an `.en`
+> model tells you nothing: it is the only answer that model can give.
 
 **Language.** Leave `--language` off and the language is detected from the audio; pass a code
 (`--language fr`) to force it. Forcing helps when detection wobbles on short or noisy clips, and
@@ -298,15 +296,15 @@ curl -fsS "${AUTH[@]}" "${AURIS_BASE_URL}/v1/audio/models"
 
 ```json
 {
-  "default": "base.en",
+  "default": "large-v3-turbo",
   "models": [
     {"id": "tiny.en", "params": "39M", "lang": "en", "desc": "fastest; weakest on names and numbers"},
-    {"id": "base.en", "params": "74M", "lang": "en", "desc": "default — fast, fine for clean speech"},
+    {"id": "base.en", "params": "74M", "lang": "en", "desc": "fast, fine for clean speech; the light choice on a CPU"},
     {"id": "distil-small.en", "params": "166M", "lang": "en", "desc": "distilled: small.en accuracy near base.en speed"},
     {"id": "small.en", "params": "244M", "lang": "en", "desc": "good accuracy/speed balance"},
     {"id": "medium.en", "params": "769M", "lang": "en", "desc": "high accuracy, English-only"},
     {"id": "distil-large-v3", "params": "756M", "lang": "en", "desc": "near large-v3 accuracy, much faster"},
-    {"id": "large-v3-turbo", "params": "809M", "lang": "multi", "desc": "best accuracy here; multilingual"}
+    {"id": "large-v3-turbo", "params": "809M", "lang": "multi", "desc": "default — best accuracy here; multilingual"}
   ],
   "pipelines": {"stt": true, "tts": true}
 }
@@ -328,12 +326,12 @@ All read from the environment with the `AURIS_` prefix (or `.env` on the worksta
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `AURIS_ASR_MODEL` | `base.en` | The default speech-to-text model, and the one loaded into every pool worker. |
+| `AURIS_ASR_MODEL` | `large-v3-turbo` | The default speech-to-text model, and the one loaded into every pool worker. `base.en` on a CPU-only machine. |
 | `AURIS_ASR_DEVICE` | `auto` | `auto` (GPU when one is visible), `cpu`, `cuda`, `cuda:1`. |
 | `AURIS_ASR_COMPUTE_TYPE` | `auto` | `auto` = `float16` on GPU, `int8` on CPU. Or `int8_float16`, `float32`. |
 | `AURIS_ASR_MODELS` | *(whole catalogue)* | Comma-separated allowlist of ids remote callers may request. The configured default is always allowed. |
 | `AURIS_ASR_WORKERS` | `1` | Resident whisper copies = transcriptions decoded in parallel. |
-| `AURIS_ASR_LANGUAGE` | *(empty = detect)* | The server's default language when a request omits `language`. Only has an effect if `AURIS_ASR_MODEL` is multilingual (`large-v3-turbo`); the `.en` models ignore it. |
+| `AURIS_ASR_LANGUAGE` | *(empty = detect)* | The server's default language when a request omits `language`. Only has an effect while `AURIS_ASR_MODEL` is multilingual (`large-v3-turbo`, the default); the `.en` models ignore it. |
 | `AURIS_ASR_VAD` | `true` | Run faster-whisper's bundled Silero VAD filter on the speech-to-text endpoints. (Cloning never does.) |
 | `AURIS_ASR_MAX_UPLOAD_MB` | `250` | Reject bigger `/v1/audio/transcriptions` uploads with `422`. An hour of 16-bit 24 kHz WAV is ~170 MB. (The clone route has its own fixed 50 MB cap → `400 bad_audio`.) |
 | `AURIS_ASR_MAX_SECONDS` | `3600` | Reject audio longer than this with `422`, checked after decode and before the pool. Matches the byte cap above, which admits about an hour of uncompressed WAV. |
