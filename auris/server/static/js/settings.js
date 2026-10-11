@@ -11,7 +11,7 @@
 "use strict";
 import { api, getJson, postJson, escapeHtml, setMsg } from "./api.js";
 import { loadPrefs, setPref } from "./prefs.js";
-import { fmtDate, relTime } from "./view-logic.js";
+import { fmtDate, relTime, usableVoices } from "./view-logic.js";
 import { confirmDialog } from "./dialog.js";
 import { copyWithFeedback } from "./clipboard.js";
 import { $ } from "./app.js";
@@ -75,7 +75,8 @@ function renderPrefs(state) {
       ? id + "  (" + ((models.find((m) => m.id === id) || {}).params || "?") + ")"
       : "server default" + (state.models ? " (" + state.models.default + ")" : ""));
   $("pref-language").value = p.language;
-  fillSelect($("pref-voice"), [""].concat(state.voices.map((v) => v.name)), p.voice,
+  const voices = usableVoices(state.voices, state.me, state.admin && p.showOthers);
+  fillSelect($("pref-voice"), [""].concat(voices.map((v) => v.name)), p.voice,
     (n) => n || "(none)");
   $("pref-speed").value = p.speed;
   $("pref-format").value = p.format;

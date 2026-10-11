@@ -3,15 +3,35 @@
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// The library's search box matches a voice's name or its owner's email.
-export function splitVoices(voices, query = "") {
+// Whose a voice is, from the viewer's side: "mine", "shared" (someone else's shared voice, or a
+// legacy unowned one — readable by everyone), "others" (someone else's private voice — the server
+// only ever sends these to an admin) or "presets".
+function section(v, me) {
+  if (v.kind === "preset") return "presets";
+  if (v.owner != null && me && v.owner === me.email) return "mine";
+  if (v.owner == null || v.visibility === "shared") return "shared";
+  return "others";
+}
+
+// The library's sections, after the search box (name or owner email) and the filter chips
+// ("all" | "mine" | "shared" | "presets"). Whether "others" is shown at all is the page's call.
+export function groupVoices(voices, me, { query = "", filter = "all" } = {}) {
   const q = String(query || "").trim().toLowerCase();
-  const shown = voices.filter((v) =>
-    !q || v.name.toLowerCase().includes(q) || String(v.owner || "").toLowerCase().includes(q));
-  return {
-    cloned: shown.filter((v) => v.kind !== "preset"),
-    presets: shown.filter((v) => v.kind === "preset"),
-  };
+  const out = { mine: [], shared: [], others: [], presets: [] };
+  for (const v of voices) {
+    if (q && !v.name.toLowerCase().includes(q) && !String(v.owner || "").toLowerCase().includes(q)) {
+      continue;
+    }
+    const s = section(v, me);
+    if (filter === "all" || filter === s) out[s].push(v);
+  }
+  return out;
+}
+
+// What the voice pickers offer: everything, minus other people's private voices unless an admin
+// has chosen to see them (the "Show others' private voices" toggle).
+export function usableVoices(voices, me, showOthers) {
+  return voices.filter((v) => showOthers || section(v, me) !== "others");
 }
 
 export function ownerLabel(voice, me) {

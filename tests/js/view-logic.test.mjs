@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  splitVoices, ownerLabel, charState, userStatus, accepts, mmss, fmtBytes, fmtDate, relTime,
+  groupVoices, usableVoices, ownerLabel, charState, userStatus, accepts, mmss, fmtBytes, fmtDate, relTime,
 } from "../../auris/server/static/js/view-logic.js";
 
 const voices = [
@@ -10,17 +10,46 @@ const voices = [
   { name: "Gaurav", kind: "cloned", owner: "b@example.com" },
 ];
 
-test("splitVoices separates cloned voices from presets", () => {
-  const { cloned, presets } = splitVoices(voices);
-  assert.deepEqual(cloned.map((v) => v.name), ["Ayeh", "Gaurav"]);
-  assert.deepEqual(presets.map((v) => v.name), ["narrator-uk-f"]);
+const ME = { email: "me@example.com" };
+const lib = [
+  { name: "mine-a", kind: "cloned", owner: "me@example.com", visibility: "private" },
+  { name: "mine-b", kind: "cloned", owner: "me@example.com", visibility: "shared" },
+  { name: "theirs-shared", kind: "cloned", owner: "b@example.com", visibility: "shared" },
+  { name: "legacy", kind: "cloned", owner: null, visibility: "shared" },
+  { name: "theirs-private", kind: "cloned", owner: "b@example.com", visibility: "private" },
+  { name: "narrator-uk-f", kind: "preset", owner: null },
+];
+const names = (g) => Object.fromEntries(Object.entries(g).map(([k, v]) => [k, v.map((x) => x.name)]));
+
+test("groupVoices sorts the library into mine, shared with me, others' private and built-in", () => {
+  assert.deepEqual(names(groupVoices(lib, ME)), {
+    mine: ["mine-a", "mine-b"],
+    shared: ["theirs-shared", "legacy"], // an unowned voice is everyone's, so it counts as shared
+    others: ["theirs-private"], // only an admin is ever sent these; the page decides whether to show them
+    presets: ["narrator-uk-f"],
+  });
 });
 
-test("splitVoices filters by name or owner, case-insensitively, ignoring surrounding space", () => {
-  assert.deepEqual(splitVoices(voices, "  ayE ").cloned.map((v) => v.name), ["Ayeh"]);
-  assert.deepEqual(splitVoices(voices, "b@EXAMPLE").cloned.map((v) => v.name), ["Gaurav"]);
-  assert.deepEqual(splitVoices(voices, "uk").presets.map((v) => v.name), ["narrator-uk-f"]);
-  assert.deepEqual(splitVoices(voices, "zzz"), { cloned: [], presets: [] });
+test("groupVoices's filter keeps one section and empties the rest", () => {
+  const g = (filter) => names(groupVoices(lib, ME, { filter }));
+  assert.deepEqual(g("mine"), { mine: ["mine-a", "mine-b"], shared: [], others: [], presets: [] });
+  assert.deepEqual(g("shared"), { mine: [], shared: ["theirs-shared", "legacy"], others: [], presets: [] });
+  assert.deepEqual(g("presets"), { mine: [], shared: [], others: [], presets: ["narrator-uk-f"] });
+  assert.deepEqual(g("all"), names(groupVoices(lib, ME)));
+});
+
+test("groupVoices searches by name or owner, case-insensitively, ignoring surrounding space", () => {
+  assert.deepEqual(names(groupVoices(lib, ME, { query: "  MINE-A " })).mine, ["mine-a"]);
+  assert.deepEqual(names(groupVoices(lib, ME, { query: "b@EXAMPLE" })).shared, ["theirs-shared"]);
+  assert.deepEqual(names(groupVoices(lib, ME, { query: "uk" })).presets, ["narrator-uk-f"]);
+  assert.deepEqual(names(groupVoices(lib, ME, { query: "zzz" })),
+    { mine: [], shared: [], others: [], presets: [] });
+});
+
+test("usableVoices hides other people's private voices unless asked to show them", () => {
+  assert.deepEqual(usableVoices(lib, ME, false).map((v) => v.name),
+    ["mine-a", "mine-b", "theirs-shared", "legacy", "narrator-uk-f"]);
+  assert.deepEqual(usableVoices(lib, ME, true).map((v) => v.name), lib.map((v) => v.name));
 });
 
 test("ownerLabel says You, the owner's email, or No owner", () => {

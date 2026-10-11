@@ -138,6 +138,12 @@ the list at all, it isn't a greyed-out row.
 | **shared** | use + modify | use only | use + modify | use only |
 | **unowned** (no owner at all) | — (nobody owns it) | use only | use + modify | use only |
 
+In the dashboard, the Voices page groups what you can see into **My voices**, **Shared with me**
+(other people's shared voices, plus unowned ones) and **Built-in**, with filter chips for each. An
+admin is sent every voice, but other people's private ones stay out of the list, and out of the
+Speak page's picker, until they turn on **Show others' private voices**. That setting is
+remembered per browser and is off by default.
+
 "Use" means listed in `auris voices` / the Voices tab, and usable with `auris tts`/`auris
 say`/`/v1/tts`/`/v1/audio/speech`. "Modify" means rename, delete, add/remove a clip, or flip the
 share toggle — refused for anyone but the owner or an admin, and for an unowned voice, refused

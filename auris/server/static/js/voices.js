@@ -8,7 +8,8 @@
 import { api, getJson, setMsg, fmtSeconds } from "./api.js";
 import { recordClip, micAvailable, levelMeter } from "./audio.js";
 import { mayChangeVisibility } from "./voice-visibility.js";
-import { splitVoices, ownerLabel, mmss, fmtBytes } from "./view-logic.js";
+import { groupVoices, ownerLabel, mmss, fmtBytes } from "./view-logic.js";
+import { loadPrefs, setPref } from "./prefs.js";
 import { avatarEl } from "./avatar.js";
 import { drawBars } from "./waveform.js";
 import { createPlayer } from "./player.js";
@@ -26,6 +27,7 @@ const samples = new Map(); // voice name -> object URL of a cached sample
 let selected = null;    // the voice in the detail panel
 let cardPlaying = null; // the voice whose sample #sample-audio holds
 let query = "";
+let filter = "all"; // the chips above the library: all | mine | shared | presets
 let recorder = null;
 let hasMic = false;
 let detailPlayer = null;
@@ -107,18 +109,48 @@ function emptyCard(text, withButton) {
   return li;
 }
 
+// An admin is sent every voice on the server. Other people's private ones stay out of the way
+// unless they turn on "Show others' private voices" (a per-browser preference, off by default).
+const showOthers = (state) => state.admin && loadPrefs().showOthers;
+
+const GROUPS = [
+  ["mine", "My voices"],
+  ["shared", "Shared with me"],
+  ["others", "Others' private voices"],
+];
+
+function grid(cards) {
+  const ul = document.createElement("ul");
+  ul.className = "card-grid";
+  ul.append(...cards);
+  return ul;
+}
+
 function renderList(state) {
-  const { cloned, presets } = splitVoices(state.voices, query);
-  const list = $("voices-list");
-  list.replaceChildren(...cloned.map((v) => voiceCard(state, v)));
-  if (!cloned.length) {
-    const any = state.voices.some((v) => v.kind !== "preset");
-    list.append(any
-      ? emptyCard("No voices match “" + query.trim() + "”.", false)
-      : emptyCard("No voices yet — clone one from a 10-second recording.", true));
+  const groups = groupVoices(state.voices, state.me, { query, filter });
+  if (!showOthers(state)) groups.others = [];
+  const sections = [];
+  for (const [key, title] of GROUPS) {
+    if (!groups[key].length) continue;
+    const sec = document.createElement("section");
+    sec.className = "voice-group";
+    sec.id = "group-" + key;
+    const h = textEl("h2", "section-title", title);
+    h.append(textEl("span", "count", String(groups[key].length)));
+    sec.append(h, grid(groups[key].map((v) => voiceCard(state, v))));
+    sections.push(sec);
   }
-  $("presets-list").replaceChildren(...presets.map((v) => voiceCard(state, v)));
-  $("presets-section").hidden = !presets.length;
+  const list = $("voices-list");
+  list.replaceChildren(...sections);
+  if (!sections.length && filter !== "presets") {
+    let card;
+    if (query.trim()) card = emptyCard("No voices match “" + query.trim() + "”.", false);
+    else if (filter === "shared") card = emptyCard("Nothing has been shared with you yet.", false);
+    else card = emptyCard("No voices yet — clone one from a 10-second recording.", true);
+    list.append(grid([card]));
+  }
+  $("presets-list").replaceChildren(...groups.presets.map((v) => voiceCard(state, v)));
+  $("presets-section").hidden = !groups.presets.length;
   markPlaying();
 }
 
@@ -453,6 +485,16 @@ export async function initVoices(state) {
   $("clone-form").addEventListener("submit", (ev) => addVoice(state, ev));
   $("record-btn").addEventListener("click", toggleRecord);
 
+  bindSegmented($("voice-filter"), (value) => { filter = value; renderList(state); });
+  $("show-others-row").hidden = !state.admin;
+  $("show-others").checked = !!showOthers(state);
+  $("show-others").addEventListener("change", (ev) => {
+    setPref("showOthers", ev.target.checked);
+    renderList(state);
+    // The Speak and Settings pickers follow the same choice.
+    document.dispatchEvent(new CustomEvent("auris:voices"));
+  });
+
   try { await refreshVoices(state); }
-  catch (e) { $("voices-list").replaceChildren(emptyCard(e.message, false)); }
+  catch (e) { $("voices-list").replaceChildren(grid([emptyCard(e.message, false)])); }
 }

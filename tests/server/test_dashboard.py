@@ -644,3 +644,22 @@ def test_account_key_revoke_and_rotate_ask_first(client):
         body = src[src.index(fn) :]
         body = body[: body.index("\n}\n")]
         assert "await confirmDialog(" in body, fn
+
+
+def test_voices_page_has_sections_filters_and_an_admin_only_others_toggle(client):
+    markup = client.get("/static/index.html", headers=NO_AUTH).text
+    for value in ("all", "mine", "shared", "presets"):
+        assert f'data-value="{value}"' in markup[markup.index('id="voice-filter"') :], value
+    # Admin-only, and off unless chosen: the row starts hidden and the box unchecked.
+    row = markup[markup.index('id="show-others-row"') :].split(">", 1)[0]
+    assert "hidden" in row
+    box = markup[markup.index('id="show-others"') :].split(">", 1)[0]
+    assert "checked" not in box
+    src = _code(client.get("/static/js/voices.js", headers=NO_AUTH).text)
+    assert "groupVoices(" in src and "showOthers" in src
+    assert '$("show-others-row").hidden = !state.admin' in src
+    # The pickers honour the same toggle, so a hidden voice can't be picked elsewhere.
+    for page in ("synth.js", "settings.js"):
+        assert "usableVoices(" in _code(client.get(f"/static/js/{page}", headers=NO_AUTH).text), (
+            page
+        )

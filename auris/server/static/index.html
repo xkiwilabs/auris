@@ -98,18 +98,29 @@
     <!-- ================= Voices ================= -->
     <section id="panel-voices" class="panel">
       <div class="page-head">
-        <div><h1>Voices</h1><p class="sub">Your cloned voices and the built-in presets.</p></div>
+        <div><h1>Voices</h1><p class="sub">Your voices, the ones shared with you, and the built-in presets.</p></div>
         <div class="head-actions">
           <label class="search"><span class="visually-hidden">Search voices</span>
             <input id="voice-search" type="search" placeholder="Search voices" autocomplete="off"></label>
           <button type="button" id="new-voice-btn" class="btn primary">+ New voice</button>
         </div>
       </div>
+      <div class="lib-filters">
+        <div class="seg" id="voice-filter" role="group" aria-label="Show">
+          <button type="button" data-value="all" aria-pressed="true">All</button>
+          <button type="button" data-value="mine" aria-pressed="false">Mine</button>
+          <button type="button" data-value="shared" aria-pressed="false">Shared</button>
+          <button type="button" data-value="presets" aria-pressed="false">Built-in</button>
+        </div>
+        <label id="show-others-row" class="others-toggle" hidden>
+          <input type="checkbox" id="show-others" class="switch" role="switch">
+          <span>Show others' private voices</span></label>
+      </div>
       <div id="voices-msg" class="msg"></div>
       <audio id="sample-audio" preload="none"></audio>
       <div id="voice-lib" class="library">
         <div class="library-main">
-          <ul id="voices-list" class="card-grid"><li class="empty-card">Loading…</li></ul>
+          <div id="voices-list"><ul class="card-grid"><li class="empty-card">Loading…</li></ul></div>
           <section id="presets-section" hidden>
             <h2 class="section-title">Built-in voices</h2>
             <ul id="presets-list" class="card-grid compact"></ul>

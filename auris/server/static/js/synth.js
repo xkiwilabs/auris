@@ -7,7 +7,7 @@
 import { api, setMsg } from "./api.js";
 import { playPcmStream, encodeWav, concatF32 } from "./audio.js";
 import { loadPrefs } from "./prefs.js";
-import { charState, mmss } from "./view-logic.js";
+import { charState, mmss, usableVoices } from "./view-logic.js";
 import { avatarEl } from "./avatar.js";
 import { createPlayer } from "./player.js";
 import { mirrorSelect } from "./segmented.js";
@@ -178,7 +178,7 @@ function applyPrefs(p) {
 function syncVoices(state) {
   const sel = $("voice-select"), keep = sel.value || loadPrefs().voice;
   sel.innerHTML = "";
-  for (const v of state.voices) {
+  for (const v of usableVoices(state.voices, state.me, state.admin && loadPrefs().showOthers)) {
     const o = document.createElement("option");
     o.value = v.name; o.textContent = v.kind === "preset" ? v.name + "  (preset)" : v.name;
     sel.appendChild(o);

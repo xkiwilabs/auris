@@ -347,6 +347,10 @@ dialog.modal p { color:var(--fg2); }
 .empty-card { display:grid; grid-column:1 / -1; justify-items:center; gap:12px; padding:40px 20px;
   text-align:center; border:1.5px dashed rgba(255,255,255,.12); border-radius:var(--r-card); color:var(--fg2); }
 #presets-section { margin-top:32px; }
+.lib-filters { display:flex; flex-wrap:wrap; align-items:center; gap:12px 20px; margin:0 0 18px; }
+.others-toggle { display:inline-flex; align-items:center; gap:10px; font-size:13px; color:var(--fg2); cursor:pointer; }
+.voice-group + .voice-group { margin-top:28px; }
+.voice-group .count { margin-left:6px; font-weight:400; color:var(--fg3); }
 
 .detail { position:sticky; top:24px; display:grid; gap:14px; max-height:calc(100vh - 48px); overflow-y:auto;
   padding:20px; background:var(--surf); border:1px solid var(--line); border-radius:var(--r-card); }

@@ -7,6 +7,7 @@
 const KEY = "auris.prefs.v1";
 const DEFAULTS = {
   asrModel: "", language: "auto", voice: "", speed: 1.0, format: "mp3", mode: "full",
+  showOthers: false, // admin only: list other people's private voices too
 };
 
 export function loadPrefs() {
