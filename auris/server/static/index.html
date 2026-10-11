@@ -292,12 +292,6 @@
           <label class="field"><span>Owner</span><select id="key-owner"></select></label>
           <button type="submit" class="btn primary">Issue key</button>
         </form>
-        <div id="key-form-proxied" class="hint" style="display:none;">
-          Not available through <code>auris dashboard</code>: the proxy injects the master token
-          server-side, so a key issued here would have no owner account and could not create or
-          modify any voice. Run <code>auris keys add &lt;name&gt; --owner &lt;email&gt;</code> on
-          the server box instead.
-        </div>
         <div id="key-issued" class="callout ok" style="display:none;"></div>
         <div id="keys-msg" class="msg"></div>
         <div class="table-scroll">
@@ -336,12 +330,6 @@
         </form>
         <div id="account-msg" class="msg"></div>
       </section>
-      <section class="card" id="account-pw-proxied" style="display:none;">
-        <h2>Change password</h2>
-        <p class="hint">Not available through <code>auris dashboard</code>: the local proxy
-          forwards only the service API, so a password change cannot reach the server from here.
-          Open the service's own address in a browser and change it there.</p>
-      </section>
       <section class="card" id="account-keys-card">
         <h2 id="account-keys-title">My API keys</h2>
         <p class="hint keys-hint">For scripts, agents and the <code>auris</code> command line. A key can't sign in to this dashboard.</p>
@@ -350,13 +338,6 @@
             <input id="account-key-name" placeholder="name this key, e.g. laptop" required></label>
           <button type="submit" class="btn primary">Issue key</button>
         </form>
-        <div id="account-key-form-proxied" class="hint" style="display:none;">
-          Issuing and rotating a key is not available through <code>auris dashboard</code>: the
-          proxy injects the master token server-side, so the page never learns which account it
-          is and a key minted here would have no owner. Run <code>auris keys add &lt;name&gt;
-          --owner &lt;email&gt;</code> on the server box, or sign in with an account at the
-          service's own address to manage your own keys here.
-        </div>
         <div id="account-issued-box" class="callout ok" style="display:none;">
           <p>Copy this key now — you will not see it again:</p>
           <div class="secret"><code id="account-issued"></code>

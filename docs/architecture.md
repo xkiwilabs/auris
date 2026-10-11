@@ -236,11 +236,20 @@ Layered, with the model behind an abstract interface so it can be swapped/mocked
   `remote_client()` returns a client iff a URL is configured. The CLI verbs (`record`/`tts`/`say`/
   `voices`/`clone`/`transcribe`) branch on it: **remote mode** calls the service (record =
   mic→upload, transcribe = file/mic→upload), else the local model path runs — same commands,
-  location-transparent. `auris login` stores whatever bearer it's given — the shared master token
-  or a named API key work identically here. `proxy.py` + `auris dashboard` serve the bundled
-  dashboard from **localhost** (a secure context, so the browser mic works) and inject the bearer
-  server-side so it never reaches the page. Tokens/keys are never accepted as CLI args (hidden
-  prompt / stdin); admins manage the server token with `scripts/token.sh show|set|rotate`.
+  location-transparent. `auris login` stores the URL plus, optionally, whatever bearer it's
+  given — the shared master token or a named API key work identically here; `--no-token` (what
+  `setup-client` runs) asks for the URL only. `proxy.py` + `auris dashboard` serve the bundled
+  dashboard from **localhost** (a secure context, so the browser mic works) and forward
+  `/auth/*`, `/v1/*`, `/ready` and `/health` to the service. **The proxy holds no credential**:
+  the page signs in exactly as on the server, and the proxy only renames the session cookie on
+  the way through, dropping `Secure` and `Domain`, and forwards no other cookie upstream. The
+  browser name is `auris_session_<port>_<hash of the server URL>`: cookies are scoped per host,
+  not per port, and this one lives 12 hours, so a name without the server in it would hand one
+  server's session to whichever server the next proxy on that port fronts. The cost of the
+  design: a host-scoped cookie is also sent to any other service on 127.0.0.1 the browser
+  visits (it is HttpOnly, so no page script can read it). The page has no "proxy mode".
+  Tokens/keys are never accepted as CLI args (hidden prompt / stdin); admins manage the server
+  token with `scripts/token.sh show|set|rotate`.
 - **`auris/config.py`** — `Settings` (pydantic-settings, env prefix `AURIS_`, reads `.env`).
   `load_settings()` constructs fresh each call so tests stay isolated. Data lives under
   `data/` (`voices/`, `auris.db`); internal/output sample rate is **24 kHz**.

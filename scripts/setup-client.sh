@@ -30,19 +30,25 @@ echo "==> installing auris client (no model) + example deps"
 .venv-client/bin/python -m pip install --quiet -e ".[client,audio]" requests openai
 
 echo
-echo "==> configuring the service (you can skip the token and add it later)"
-.venv-client/bin/auris login || true
+echo "==> where is the auris server? (ask whoever runs it for the address)"
+.venv-client/bin/auris login --no-token || true
 
 cat <<'EOF'
 
-Client ready. Activate it in each new shell with:  source .venv-client/bin/activate
+Client ready. In this terminal, and in every new one, first run:
 
-Then:
-  auris dashboard                 # open the dashboard locally (mic works here)
+  source .venv-client/bin/activate
+
+Then open the dashboard and sign in there with your email and password (the mic works here):
+
+  auris dashboard
+
+The command-line tools need an API key as well. Make one in the dashboard (Account → My API
+keys → Issue), then save it once with:  auris config token
+
   auris voices                    # list the service's voices
   auris record "Me"               # record from your mic and upload (clone your voice)
   auris tts narrator-uk-f --text "Hello." --out hello.mp3
 
-Add or change your token any time:  auris config token
 For agents/automation, set AURIS_BASE_URL and AURIS_AUTH_TOKEN in the environment instead.
 EOF

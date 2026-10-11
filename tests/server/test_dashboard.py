@@ -71,14 +71,25 @@ def test_api_module_sends_the_csrf_header_and_handles_401(client):
     assert "401" in src
 
 
-def test_app_module_probes_proxy_then_me(client):
-    src = client.get("/static/js/app.js").text
-    assert "detectProxy" in src and "/auth/me" in client.get("/static/js/auth.js").text
+def test_app_module_boots_from_auth_me(client):
+    assert "auth.me()" in client.get("/static/js/app.js").text
+    assert "/auth/me" in client.get("/static/js/auth.js").text
 
 
-def test_auth_module_probes_the_proxy_marker(client):
-    # The page still detects the localhost proxy via /__proxy — moved out of the inline script.
-    assert "/__proxy" in client.get("/static/js/auth.js").text
+def test_the_page_has_no_proxy_mode(client):
+    # `auris dashboard`'s proxy used to sign in on the page's behalf and forward only /v1/*, so
+    # the page had a degraded "proxied" mode: no password change, no key issue, no sign-out, an
+    # admin guessed by probing. The proxy now forwards /auth/* and relays the browser's own
+    # session cookie, so the page signs in the same way wherever it is served from.
+    import pathlib
+
+    js = pathlib.Path(__file__).resolve().parents[2] / "auris" / "server" / "static" / "js"
+    for f in js.glob("*.js"):
+        src = _code(f.read_text())
+        for gone in ("proxied", "detectProxy", "probeAdmin", "/__proxy"):
+            assert gone not in src, (f.name, gone)
+    markup = client.get("/static/index.html", headers=NO_AUTH).text
+    assert "-proxied" not in markup
 
 
 def _code(src: str) -> str:
@@ -185,52 +196,20 @@ def test_account_module_keeps_credentials_out_of_storage(client):
 
 def test_account_module_shows_only_your_own_keys(client):
     # /v1/keys returns every key (with its owner) to an admin. "My API keys" must filter to the
-    # caller's own, and fall back to an honestly-labelled unfiltered list (never a silently
-    # empty one) when the page does not know its own email — the proxy-mode case, since
-    # /auth/me is not forwarded there.
+    # caller's own.
     src = client.get("/static/js/account.js", headers=NO_AUTH).text
     assert "k.owner === mine" in src
-    assert "account-keys-title" in src
-    for marker in ("My API keys", "API keys"):
-        assert marker in src, marker
-
-
-def test_account_module_hides_the_password_form_in_proxy_mode(client):
-    # `auris dashboard`'s proxy forwards only /ready, /health and /v1/* (client/proxy.py's
-    # _PROXIED_PREFIXES), so POST /auth/password cannot reach the server there and the form
-    # failed with a bare "Not Found". String-pinned like its sibling above, because the branch
-    # lives inside a DOM-touching initialiser and so is not `node --test`-able as written.
-    src = client.get("/static/js/account.js", headers=NO_AUTH).text
-    assert "state.proxied" in src
-    assert "account-pw-proxied" in src
     markup = client.get("/static/index.html", headers=NO_AUTH).text
-    assert 'id="account-pw-card"' in markup  # the form card the branch hides
-    assert 'id="account-pw-proxied"' in markup  # the explanation it shows instead
+    assert '<h2 id="account-keys-title">My API keys</h2>' in markup
 
 
-def test_account_module_hides_issue_and_rotate_in_proxy_mode(client):
-    # Issue and Rotate both POST /v1/keys. In proxy mode the proxy injects the master bearer
-    # server-side, so the page never learns which account it is — a key minted there would have
-    # no owner and, since Task 5b, could not create or modify any voice at all. Same mechanism
-    # as the password-form guard above.
-    src = client.get("/static/js/account.js", headers=NO_AUTH).text
-    assert "state.proxied" in src
-    assert "account-key-form-proxied" in src
-    markup = client.get("/static/index.html", headers=NO_AUTH).text
-    assert 'id="account-key-form"' in markup  # the form the branch hides
-    assert 'id="account-key-form-proxied"' in markup  # the explanation it shows instead
-
-
-def test_settings_module_hides_the_admin_key_issue_form_in_proxy_mode(client):
-    # `state.admin` is true in proxy mode (the proxy always injects the master bearer, which is
-    # always admin), so the admin key form renders — but issuing there has the same ownerless
-    # problem as account.js's Issue/Rotate.
-    src = client.get("/static/js/settings.js", headers=NO_AUTH).text
-    assert "state.proxied" in src
-    assert "key-form-proxied" in src
-    markup = client.get("/static/index.html", headers=NO_AUTH).text
-    assert 'id="key-form"' in markup
-    assert 'id="key-form-proxied"' in markup
+def test_sign_out_is_offered_to_every_signed_in_session(client):
+    # The sign-in and password-change screens hide it; entering the app must always bring it
+    # back. It once did so only off a "not proxied" branch.
+    src = _code(client.get("/static/js/app.js").text)
+    show_app = src[src.index("async function showApp") :]
+    show_app = show_app[: show_app.index("\n}\n")]
+    assert '$("signout-btn").style.display = "";' in show_app
 
 
 def test_users_module_is_served_and_wired(client):

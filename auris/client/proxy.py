@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import http.client
 import http.server
 import json
@@ -14,100 +15,55 @@ from pathlib import Path
 
 _INDEX = Path(__file__).resolve().parent.parent / "server" / "static" / "index.html"
 _STATIC_DIR = _INDEX.parent  # served locally so page + assets always come from one bundle
-_PROXIED_PREFIXES = ("/ready", "/health", "/v1/")
+_PROXIED_PREFIXES = ("/ready", "/health", "/auth/", "/v1/")
 _HOP_BY_HOP = {"connection", "transfer-encoding", "content-length", "keep-alive", "host"}
 
 SESSION_COOKIE = "auris_session"  # literal, not imported: auris/client/ must not import server code
-CLIENT_HEADER = "X-Auris-Client"
-CLIENT_VALUE = "dashboard"
+_DROPPED_ATTRS = {"secure", "domain"}
 
 
-class _Session:
-    """Holds a dashboard session on the browser's behalf.
+def browser_cookie_name(port: int, base_url: str) -> str:
+    """The name the session cookie goes by in the browser.
 
-    The password lives in memory for the life of this process and is never written to disk — the
-    point of the proxy is that no credential reaches the page, and persisting one would trade
-    that for a worse problem. A 12-hour session will expire while the proxy is still running, so
-    a 401 re-logs in rather than making the person restart it.
+    Cookies are scoped to a host, not a port, and this one outlives the proxy (it keeps the
+    server's 12-hour lifetime). Named by port alone, a session for one server would be sent to
+    whatever server the next proxy on that port fronts — so the server is in the name too."""
+    tag = hashlib.sha256(base_url.rstrip("/").encode()).hexdigest()[:8]
+    return f"{SESSION_COOKIE}_{port}_{tag}"
+
+
+def session_from_cookie_header(header: str, name: str) -> str | None:
+    """This proxy's session from the browser's Cookie header, if it holds one."""
+    for part in header.split(";"):
+        key, _, value = part.strip().partition("=")
+        if key == name and value:
+            return value
+    return None
+
+
+def rewrite_set_cookie(header: str, name: str) -> str | None:
+    """The server's session Set-Cookie, renamed for the browser; None for any other cookie.
+
+    `Secure` is dropped because the page is plain http://127.0.0.1 (a secure context, but not
+    every browser will send a Secure cookie to it), and `Domain` because it names the server's
+    host, not this one. HttpOnly, SameSite, Path and the lifetime are kept as the server set them.
     """
-
-    def __init__(self, base_url: str, email: str, password: str):
-        self.base_url = base_url.rstrip("/")
-        self.email = email
-        self._password = password
-        self._cookie: str | None = None
-
-    def ensure_session(self) -> str:
-        if self._cookie:
-            return self._cookie
-        body = json.dumps({"email": self.email, "password": self._password}).encode("utf-8")
-        req = urllib.request.Request(
-            f"{self.base_url}/auth/login",
-            data=body,
-            headers={"Content-Type": "application/json", CLIENT_HEADER: CLIENT_VALUE},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                payload = json.loads(resp.read() or b"{}")
-                cookie = self._cookie_from(resp.headers.get_all("Set-Cookie") or [])
-        except urllib.error.HTTPError as exc:
-            detail = "email or password not accepted" if exc.code == 401 else f"HTTP {exc.code}"
-            raise RuntimeError(f"could not sign in to {self.base_url}: {detail}") from exc
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"could not reach {self.base_url}: {exc.reason}") from exc
-        if payload.get("must_change_password"):
-            raise RuntimeError(
-                "this account must set a new password before it can be used. Sign in to the "
-                f"dashboard at {self.base_url} directly, change it, then run this again."
-            )
-        if not cookie:
-            raise RuntimeError(f"{self.base_url} accepted the sign-in but set no session cookie")
-        self._cookie = cookie
-        return cookie
-
-    @staticmethod
-    def _cookie_from(set_cookie_headers: list[str]) -> str | None:
-        for header in set_cookie_headers:
-            first = header.split(";", 1)[0].strip()
-            name, _, value = first.partition("=")
-            if name == SESSION_COOKIE and value:
-                return value
+    first, _, rest = header.partition(";")
+    key, _, value = first.strip().partition("=")
+    if key != SESSION_COOKIE:
         return None
-
-    def auth_headers(self) -> dict[str, str]:
-        """What to attach to a forwarded request. Never an Authorization header: the master token
-        is no longer a dashboard credential and an API key can no longer open a session."""
-        return {
-            "Cookie": f"{SESSION_COOKIE}={self.ensure_session()}",
-            CLIENT_HEADER: CLIENT_VALUE,
-        }
-
-    def invalidate(self) -> None:
-        self._cookie = None
-
-
-def forward_with_retry(session, send):
-    """Run `send(headers) -> (status, body)` upstream, re-signing in once on a 401.
-
-    Exactly one retry: a 12-hour cookie expiring mid-session should be invisible, but a
-    credential that is genuinely rejected must not loop.
-    """
-    for attempt in (1, 2):
-        status, body = send(session.auth_headers())
-        if status != 401 or attempt == 2:
-            return status, body
-        session.invalidate()  # the cookie expired, or the master token was rotated
-    raise AssertionError("unreachable")
+    attrs = [a.strip() for a in rest.split(";") if a.strip()]
+    kept = [a for a in attrs if a.partition("=")[0].strip().lower() not in _DROPPED_ATTRS]
+    return "; ".join([f"{name}={value}", *kept])
 
 
 class _ProxyHandler(http.server.BaseHTTPRequestHandler):
-    """Serve the bundled dashboard at /, mark itself via /__proxy, and forward /ready + /v1/* to
-    the configured remote service with the session cookie injected. Subclasses set base_url +
-    session (handler_for_session)."""
+    """Serve the bundled dashboard at / and /static/*, and forward /ready, /health, /auth/* and
+    /v1/* to the configured remote service. The proxy holds no credential: the page signs in
+    exactly as it does on the server itself, and the proxy only renames the session cookie on
+    the way through (see browser_cookie_name). Subclasses set base_url (handler_for)."""
 
     base_url = ""
-    session: _Session | None = None
 
     def log_message(self, *args):  # quiet
         pass
@@ -137,7 +93,8 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
     def _local_only(self) -> bool:
         """Guard against DNS rebinding: only serve requests whose Host (and Origin, if present)
         is this loopback server. A malicious page that rebinds its name to 127.0.0.1 still sends
-        its own Host header, so this blocks it from abusing the token-injecting proxy."""
+        its own Host header, so this stops it using the proxy as a relay onto the server's
+        network (to reach it at all, the page has to be the one this proxy serves)."""
         port = self.server.server_address[1]
         hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
         if self.headers.get("Host", "").lower() not in hosts:
@@ -152,65 +109,46 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length else None
         u = urllib.parse.urlsplit(self.base_url)
         cls = http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection
-
-        def send(auth_headers: dict[str, str]) -> tuple[int, bytes]:
-            upstream = cls(u.netloc, timeout=300)
-            headers = {k: v for k, v in self.headers.items() if k.lower() not in _HOP_BY_HOP}
-            # Strip whatever the browser sent *before* the injected credential is applied, so the
-            # page can never influence which session the proxy uses.
-            headers.pop("Authorization", None)
-            headers.pop("Cookie", None)
-            headers.update(auth_headers)
+        name = browser_cookie_name(self.server.server_address[1], self.base_url)
+        headers = {k: v for k, v in self.headers.items() if k.lower() not in _HOP_BY_HOP}
+        # Only this proxy's session goes to the server, under the name the server gave it — never
+        # the browser's other 127.0.0.1 cookies.
+        headers.pop("Cookie", None)
+        sess = session_from_cookie_header(self.headers.get("Cookie", ""), name)
+        if sess:
+            headers["Cookie"] = f"{SESSION_COOKIE}={sess}"
+        upstream = cls(u.netloc, timeout=300)
+        try:
             try:
                 upstream.request(method, self.path, body=body, headers=headers)
                 resp = upstream.getresponse()
-                if resp.status == 401:
-                    resp.read()  # drain so the connection closes cleanly; nothing sent yet
-                    return 401, b""
-                self.send_response(resp.status)
-                for k, v in resp.getheaders():
-                    if k.lower() in _HOP_BY_HOP:
+            except OSError as exc:
+                message = f"could not reach {self.base_url}: {exc}"
+                self._send_bytes(
+                    502,
+                    json.dumps({"error": {"code": "upstream", "message": message}}).encode(),
+                    "application/json",
+                )
+                return
+            self.send_response(resp.status)
+            for k, v in resp.getheaders():
+                if k.lower() in _HOP_BY_HOP:
+                    continue
+                if k.lower() == "set-cookie":
+                    v = rewrite_set_cookie(v, name)  # any other upstream cookie is dropped
+                    if v is None:
                         continue
-                    if k.lower() == "set-cookie":
-                        # Never forward an upstream Set-Cookie into the browser's jar: the only
-                        # cookie this page may hold is the one the proxy itself injects per
-                        # request, server-side, from `self.session`. No current /v1/* route sets
-                        # one (only /auth/login and /auth/password do, and neither is forwarded —
-                        # see _PROXIED_PREFIXES), but without this guard a future one that did
-                        # would leak the proxy's own session cookie straight into the page.
-                        continue
-                    self.send_header(k, v)
-                self.send_header("Connection", "close")  # body ends at EOF → streaming passthrough
-                self.end_headers()
-                while True:
-                    chunk = resp.read(8192)
-                    if not chunk:
-                        break
-                    self.wfile.write(chunk)
-                    self.wfile.flush()
-                return resp.status, b""
-            finally:
-                upstream.close()
-
-        try:
-            status, _ = forward_with_retry(self.session, send)
-        except (RuntimeError, OSError) as exc:
-            self._send_bytes(
-                502,
-                json.dumps({"error": {"code": "upstream", "message": str(exc)}}).encode(),
-                "application/json",
-            )
-            return
-        if status == 401:
-            # Both attempts came back 401 — a genuinely rejected re-login, not an expired cookie.
-            # Nothing has been written to the browser yet, so this is the one response for it.
-            self._send_bytes(
-                401,
-                json.dumps(
-                    {"error": {"code": "unauthorized", "message": "session invalid"}}
-                ).encode(),
-                "application/json",
-            )
+                self.send_header(k, v)
+            self.send_header("Connection", "close")  # body ends at EOF → streaming passthrough
+            self.end_headers()
+            while True:
+                chunk = resp.read(8192)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        finally:
+            upstream.close()
 
     def do_GET(self):
         if not self._local_only():
@@ -219,8 +157,6 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         path = self._path()
         if path == "/":
             self._send_bytes(200, _INDEX.read_bytes(), "text/html; charset=utf-8")
-        elif path == "/__proxy":
-            self._send_bytes(200, json.dumps({"proxy": True}).encode(), "application/json")
         elif path.startswith("/static/"):
             self._local_static(path)
         elif path.startswith(_PROXIED_PREFIXES):
@@ -253,28 +189,33 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(404)
 
 
-def handler_for_session(base_url: str, email: str, password: str) -> type[_ProxyHandler]:
-    """A handler subclass bound to one service URL and one signed-in account."""
-    return type(
-        "_BoundProxyHandler",
-        (_ProxyHandler,),
-        {"base_url": base_url.rstrip("/"), "session": _Session(base_url, email, password)},
-    )
+def handler_for(base_url: str) -> type[_ProxyHandler]:
+    """A handler subclass bound to one service URL."""
+    return type("_BoundProxyHandler", (_ProxyHandler,), {"base_url": base_url.rstrip("/")})
 
 
-def serve_dashboard(
-    base_url: str, email: str, password: str, port: int = 8765, open_browser: bool = True
-) -> None:
+def _check_reachable(base_url: str) -> None:
+    try:
+        with urllib.request.urlopen(f"{base_url}/health", timeout=10):
+            pass
+    except urllib.error.HTTPError:
+        pass  # it answered: reachable
+    except (urllib.error.URLError, OSError) as exc:
+        reason = getattr(exc, "reason", exc)
+        raise RuntimeError(f"could not reach {base_url}: {reason}") from exc
+
+
+def serve_dashboard(base_url: str, port: int = 8765, open_browser: bool = True) -> None:
     """Serve the dashboard locally and proxy to the remote service. Blocks until Ctrl-C."""
-    handler = handler_for_session(base_url, email, password)
-    handler.session.ensure_session()  # fail loudly now, not on the first page load
-    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    base_url = base_url.rstrip("/")
+    _check_reachable(base_url)  # fail loudly now, not on the first page load
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler_for(base_url))
     url = f"http://127.0.0.1:{httpd.server_address[1]}/"
     if open_browser:
         threading.Thread(
             target=lambda: (time.sleep(0.6), webbrowser.open(url)), daemon=True
         ).start()
-    print(f"auris dashboard → {url}  (proxying {base_url.rstrip('/')})  — Ctrl-C to stop")
+    print(f"auris dashboard → {url}  (proxying {base_url}) — sign in there; Ctrl-C to stop")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

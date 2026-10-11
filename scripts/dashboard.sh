@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Open the auris dashboard in your browser. The first run asks for the service URL and your token
-# and saves them to client.env (gitignored) so you never retype them. No Python needed — just
-# curl and a browser.
+# Open the auris dashboard in your browser; you sign in on the page. The first run asks for the
+# service URL (and, optionally, an API key for the example scripts) and saves them to client.env
+# (gitignored) so you never retype them. No Python needed — just curl and a browser.
 #
 # Usage:  ./scripts/dashboard.sh
 #
@@ -13,7 +13,7 @@ CONF=client.env
 if [ ! -f "$CONF" ]; then
   echo "First-time setup — enter the details your team gave you."
   read -r -p "  Service URL (e.g. http://your-server:8011): " BASE
-  read -r -p "  Auth token: " TOKEN
+  read -r -p "  API key for the example scripts (optional — Enter to skip): " TOKEN
   BASE="${BASE%/}"
   ( umask 177; printf 'AURIS_BASE_URL=%s\nAURIS_AUTH_TOKEN=%s\n' "$BASE" "$TOKEN" >"$CONF" )
   echo "  Saved $CONF (gitignored). Edit it any time to change the URL or token."

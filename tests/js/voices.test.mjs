@@ -26,10 +26,10 @@ test("an unowned voice has no toggle, even for an admin", () => {
   assert.equal(mayChangeVisibility(voice, me, true), false);
 });
 
-test("proxy mode shows the control and lets the server be the real gate", () => {
-  // In proxy mode state.me has no email (/auth/me is not forwarded), so the page cannot know
-  // whether the viewer owns this voice — it shows the control and the server answers 403 if not.
+test("a viewer the page can't identify gets no toggle", () => {
+  // Every signed-in page knows its email now (the localhost proxy forwards /auth/me too), so a
+  // missing one means no session at all — not an excuse to offer the control.
   const voice = { owner: "a@example.com" };
-  const me = { principal: "proxy" };
-  assert.equal(mayChangeVisibility(voice, me, false), true);
+  assert.equal(mayChangeVisibility(voice, { principal: "x" }, false), false);
+  assert.equal(mayChangeVisibility(voice, null, false), false);
 });

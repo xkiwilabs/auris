@@ -7,12 +7,9 @@
 // voice for exactly this reason — the dashboard must not offer a control the CLI refuses to
 // perform, not even for an admin.
 //
-// `voice` carries `owner` (an email, or null); `me` is `state.me` (in proxy mode it has no
-// `email` — `/auth/me` is not forwarded, so the page cannot know whose voice this is); `isAdmin`
-// is `state.admin`.
+// `voice` carries `owner` (an email, or null); `me` is `state.me`; `isAdmin` is `state.admin`.
 export function mayChangeVisibility(voice, me, isAdmin) {
   if (voice.owner == null) return false;
   if (isAdmin) return true;
-  if (!me || !me.email) return true; // proxy mode: show it and let the server's 403 be the gate
-  return voice.owner === me.email;
+  return !!me && !!me.email && voice.owner === me.email;
 }

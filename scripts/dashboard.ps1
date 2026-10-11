@@ -1,5 +1,6 @@
-# Open the auris dashboard in your browser (Windows). The first run asks for the service URL and
-# your token and saves them to client.env so you never retype them.
+# Open the auris dashboard in your browser (Windows); you sign in on the page. The first run asks
+# for the service URL (and, optionally, an API key for the example scripts) and saves them to
+# client.env so you never retype them.
 #
 # Usage (PowerShell, from the repo root):
 #   .\scripts\dashboard.ps1
@@ -13,7 +14,7 @@ $conf = "client.env"
 if (-not (Test-Path $conf)) {
     Write-Host "First-time setup - enter the details your team gave you."
     $base = (Read-Host "  Service URL (e.g. http://your-server:8011)").TrimEnd("/")
-    $token = Read-Host "  Auth token"
+    $token = Read-Host "  API key for the example scripts (optional - Enter to skip)"
     "AURIS_BASE_URL=$base`r`nAURIS_AUTH_TOKEN=$token" | Set-Content -Path $conf -Encoding ascii
     Write-Host "  Saved $conf"
     Write-Host ""

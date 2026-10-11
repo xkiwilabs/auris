@@ -425,7 +425,7 @@ async function addVoice(state, ev) {
 // ---------------------------------------------------------------- init
 
 export async function initVoices(state) {
-  hasMic = (state.proxied || window.isSecureContext) && micAvailable();
+  hasMic = window.isSecureContext && micAvailable();
   detailPlayer = createPlayer($("vc-player"), $("vc-audio"), {
     onEmptyPlay: () => { if (selected) loadDetailSample(selected); },
   });

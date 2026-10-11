@@ -35,49 +35,35 @@ A lightweight install (no GPU, no model) that gives you the `auris` command in *
 
 ```bash
 git clone <repo-url> auris && cd auris
-./scripts/setup-client.sh          # installs the client, then runs `auris login`
+./scripts/setup-client.sh          # installs the client, then asks for the server's address
 source .venv-client/bin/activate
 ```
 
 **Windows (PowerShell):** `.\scripts\setup-client.ps1`, then `.\.venv-client\Scripts\Activate.ps1`.
 
-`auris login` asks for the service URL and your key — a personal API key works exactly where the
-shared token used to (it still prompts for "Auth token"; paste your key there). You can skip it
-and add it later with `auris config token`. Then:
+Setup asks for one thing, the server's address. Run the `source` line in every new terminal
+(otherwise `auris` is "command not found"). On a Mac, `brew install portaudio` too if setup says
+it's missing — only `auris record` needs it. Then:
 
 ```bash
 auris dashboard          # opens the dashboard at http://localhost — the mic Record button WORKS here
+```
+
+It opens the page in your browser, and you **sign in there** with your email and password,
+exactly as at the server's own address — including choosing your own password on a brand-new
+account. It asks for nothing in the terminal and holds no credential itself.
+
+**The command-line tools** need an **API key** as well — a separate, machine-only credential
+([accounts.md](accounts.md)). Make one in the dashboard (**Account → My API keys → Issue**) and
+save it once with `auris config token`. The dashboard itself never needs it. Then:
+
+```bash
 auris record "Me"        # record from your mic in the terminal and upload it (clone your voice)
 auris voices             # list available voices (presets + cloned)
 auris tts narrator-uk-f --text "Hello." --out hello.mp3
 auris say  narrator-uk-f --text "Streamed live."
 auris transcribe meeting.m4a   # speech -> text, decoded on the service
 ```
-
-`auris dashboard` separately prompts for your dashboard **email and password** (not your API
-key — that's a different, machine-only credential; see [accounts.md](accounts.md)), signs you in
-through the local proxy, and never writes the password to disk.
-
-> **First sign-in on a brand-new account? Don't start with `auris dashboard`.** A freshly created
-> account must set its own password before it can do anything, and `auris dashboard` **can't**
-> clear that for you — the proxy only forwards `/ready`, `/health` and `/v1/*`, and the
-> password-change endpoint isn't one of them. If it's blocked, you'll see exactly this:
->
-> > this account must set a new password before it can be used. Sign in to the dashboard at
-> > \<url\> directly, change it, then run this again.
->
-> That message is correct — the fix is the step below, not retrying `auris dashboard`. Do it in
-> this order:
->
-> 1. **On the server box**, the admin runs `auris users add <email>` (or `--role admin` for an
->    admin account) — the generated password prints **once**.
-> 2. **In a browser, at the server's own address** — `http://your-server:8011`, say, **not**
->    through `auris dashboard` — sign in with that password and set a real one. This step works
->    fine over plain `http`, because changing a password needs no microphone.
-> 3. **Only then** run `auris dashboard`. It exists purely because the browser **microphone**
->    needs a secure context, and `localhost` is the only way to get one here — a plain password
->    change needs no microphone, so it has no reason to go through the proxy, and the proxy
->    doesn't let it.
 
 ### Turning speech into text
 
@@ -107,9 +93,9 @@ If the service was set up without speech-to-text, `auris transcribe` says so ins
 oddly. Full details: [stt.md](stt.md).
 
 Why `auris dashboard` fixes recording: it serves the page from **localhost** (a *secure context*),
-which is the only way browsers allow the microphone — and your credentials stay in the local
-proxy, never reaching the browser. For agents/automation, set `AURIS_BASE_URL` +
-`AURIS_AUTH_TOKEN` in the environment instead of `auris login`.
+which is the only way browsers allow the microphone, and passes everything else through to the
+server. For agents/automation, set `AURIS_BASE_URL` + `AURIS_AUTH_TOKEN` in the environment
+instead of `auris login`.
 
 ---
 
@@ -176,12 +162,8 @@ This is the easy way. No setup, no code.
 > separate, each one owned by an account, and still CLI-managed the same way as before:
 > `auris keys add alice --owner alice@example.com` (prints the key once; `--owner` is required),
 > `auris keys list` (now shows an owner column), `auris keys revoke alice` — or let people issue
-> their own from their **Account** page, which is the normal path now. Issuing and rotating a key
-> is **not** available through `auris dashboard`'s localhost proxy, because the proxy injects the
-> master token server-side and so never learns which account it's acting as — a key minted there
-> would have no owner. Manage keys with `auris keys add <name> --owner <email>` on the server box
-> instead, or have the person sign in with their own account at the service's own address to use
-> the in-browser forms. Full detail: [accounts.md](accounts.md).
+> their own from their **Account** page, which is the normal path now — at the server's address
+> or through `auris dashboard`, which works the same. Full detail: [accounts.md](accounts.md).
 >
 > **A key minted before this requirement existed has no owner.** It still authenticates and can
 > still read and synthesise, but cloning, renaming and deleting are refused with a message
@@ -193,9 +175,9 @@ That's the whole tool. The sections below are **optional**.
 ### Open it with one command (optional)
 
 If you've cloned the repo, **`./scripts/dashboard.sh`** (Windows: `.\scripts\dashboard.ps1`) opens
-the dashboard for you. The first run asks for the service URL and your key (or the shared token)
-and saves them to a private **`client.env`** file (never committed), so you won't retype them
-again. This proxy mode skips the sign-in screen entirely — you're already authenticated.
+the dashboard for you at the server's own address, where you sign in as usual. The first run asks
+for the service URL (and, optionally, an API key for the example scripts below) and saves them to
+a private **`client.env`** file (never committed), so you won't retype them again.
 
 ---
 
@@ -351,9 +333,8 @@ and the first use of one the service hasn't downloaded yet will pause while it f
   password, a mistyped email, *and* a disabled account on purpose (so a failed sign-in can't be
   used to check whether an address is registered). Double-check both fields and try again; if
   you're sure they're right, ask your admin whether your account is disabled.
-- **"this account must set a new password before it can be used"** — expected on a brand-new
-  account; see the first-sign-in order in section 0 above, especially if you hit this from
-  `auris dashboard` rather than the browser directly.
+- **"choose a new password" right after your first sign-in** — expected on a brand-new account:
+  the password your admin gave you is temporary. Pick your own (12+ characters) and carry on.
 - **An API key stopped working ("invalid bearer token")** — it may have been revoked. Ask whoever
   manages your key for a new one, or rotate it yourself from the dashboard's **Account** page if
   it's yours.

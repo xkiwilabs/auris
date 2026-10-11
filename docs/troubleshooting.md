@@ -307,7 +307,7 @@ auris bug.
 
 **Fix — use `auris dashboard`.** Install the client (`./scripts/setup-client.sh`) and run
 **`auris dashboard`**. It serves the dashboard from **`http://localhost`** (a secure context), so
-the **Record** button works — no HTTPS, no certificates, and your token stays in the local proxy.
+the **Record** button works — no HTTPS, no certificates. You sign in on the page as usual.
 See [remote-users.md](remote-users.md).
 
 **No client installed?** Just **upload an audio file** instead of recording: capture ~10 s in any

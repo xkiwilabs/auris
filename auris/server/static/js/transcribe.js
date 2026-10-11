@@ -119,7 +119,7 @@ export async function initTranscribe(state) {
   fillModels(state);
   $("stt-language").value = loadPrefs().language || "auto";
   document.addEventListener("auris:prefs", () => fillModels(state));
-  if ((state.proxied || window.isSecureContext) && micAvailable()) $("stt-record-btn").style.display = "";
+  if (window.isSecureContext && micAvailable()) $("stt-record-btn").style.display = "";
   $("stt-record-btn").onclick = toggleRecord;
   attachDropzone($("stt-drop"), $("stt-file"), (f) => { setMsg($("stt-msg"), "", ""); showFile(f); },
     (f) => setMsg($("stt-msg"), "“" + f.name + "” isn't an audio file.", "err"));

@@ -454,7 +454,7 @@ textarea.big-text:focus, textarea.big-text:hover { border:0; box-shadow:none; }
 .chips-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:16px; }
 .chips-row .label { margin-right:4px; font-size:13px; color:var(--fg2); }
 .version, .prefs-note { margin-top:14px; }
-#key-form, #key-form-proxied { margin-bottom:6px; }
+#key-form { margin-bottom:6px; }
 .table-scroll { overflow-x:auto; margin-top:14px; }
 @media (max-width:720px) {
   .tiles { grid-template-columns:minmax(0,1fr); }

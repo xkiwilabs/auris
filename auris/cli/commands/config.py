@@ -55,20 +55,36 @@ def clear() -> None:
     typer.echo("Cleared.")
 
 
+def _interactive() -> bool:
+    return sys.stdin.isatty()
+
+
 def login(
     url: str = typer.Option(None, "--url", help="Service base URL (prompts if omitted)"),
+    no_token: bool = typer.Option(
+        False, "--no-token", help="Only set the URL; add an API key later with `auris config token`"
+    ),
 ) -> None:
-    """Configure this client to use a remote auris service (URL + token)."""
+    """Point this client at a remote auris service: its URL, plus an optional API key.
+
+    `auris dashboard` needs only the URL — you sign in on the page. The API key is for the
+    command-line tools (`auris voices`, `tts`, `record`, `transcribe`)."""
     current = load_client_config()
     if url is None:
         url = typer.prompt("Service URL", default=current["base_url"] or "http://127.0.0.1:8011")
-    # Token is optional — it can be added later with `auris config token`. Hidden / stdin only.
-    if sys.stdin.isatty():
-        token = typer.prompt(
-            "Auth token (leave blank to add later)", default="", show_default=False, hide_input=True
-        )
-    else:
-        token = sys.stdin.readline().strip()
+    token = ""
+    if not no_token:
+        # Hidden prompt or stdin only — a token never goes on the command line.
+        if _interactive():
+            token = typer.prompt(
+                "API key for the command-line tools (the dashboard doesn't need one; "
+                "Enter to skip)",
+                default="",
+                show_default=False,
+                hide_input=True,
+            )
+        else:
+            token = sys.stdin.readline().strip()
     save_client_config(base_url=url, token=token or None)
 
     sc = None
@@ -81,4 +97,7 @@ def login(
     elif token:
         typer.echo(f"Saved {url} — but couldn't reach it yet (check the URL / your VPN).")
     else:
-        typer.echo(f"Saved {url}. Add your token any time with: auris config token")
+        typer.echo(
+            f"Saved {url}. That's all `auris dashboard` needs. For the command-line tools, add an "
+            "API key (Account → My API keys in the dashboard) with: auris config token"
+        )

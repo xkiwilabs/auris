@@ -4,8 +4,7 @@
 // panels read (synth.js gates on `state.info.pipelines.tts`).
 //
 // The Admin block is rendered only when `state.admin` is true — that flag comes from the
-// server (`/auth/me`'s `role`, or an admin-only `/v1/users` probe behind the proxy where
-// `/auth/me` is not forwarded), never from a guess in the page; the routes are admin-only
+// server (`/auth/me`'s `admin`), never from a guess in the page; the routes are admin-only
 // server-side regardless. A freshly issued key is put in the DOM once and read back from there
 // by the Copy button: it is never written to localStorage, sessionStorage, a cookie or anywhere
 // else that outlives the page.
@@ -174,18 +173,9 @@ export async function initSettings(state) {
   if (state.admin) {
     $("admin-card").style.display = "";
     $("jump-keys").hidden = false;
-    // In proxy mode `state.admin` is true because the proxy always injects the master bearer
-    // (see app.js's probeAdmin), but the page still does not know which account it is — issuing
-    // a key here would mint one with no owner, which Task 5b made strictly useless. Same guard
-    // as account.js's Issue/Rotate controls.
-    if (state.proxied) {
-      $("key-form").style.display = "none";
-      $("key-form-proxied").style.display = "";
-    } else {
-      $("key-form").addEventListener("submit", issue);
-      await fillOwners(state);
-      document.addEventListener("auris:users", () => fillOwners(state));
-    }
+    $("key-form").addEventListener("submit", issue);
+    await fillOwners(state);
+    document.addEventListener("auris:users", () => fillOwners(state));
     await renderKeys();
   }
 }

@@ -1,9 +1,9 @@
 // auris/server/static/js/app.js — boot, sign-in/app switch, navigation, and the shell's small
 // global behaviours (the phone More sheet, ⋯ menus, jump links).
 //
-// Boot order is deliberate: detect the proxy first (it injects a bearer, so /auth/me is neither
-// forwarded nor needed), otherwise ask /auth/me whether a session cookie is live. Panels are
-// initialised once, after the first successful entry into the app.
+// Boot asks /auth/me whether a session cookie is live — the same on the server and behind
+// `auris dashboard`'s localhost proxy, which forwards /auth/* too. Panels are initialised once,
+// after the first successful entry into the app.
 "use strict";
 import { setUnauthorizedHandler, setMsg } from "./api.js";
 import * as auth from "./auth.js";
@@ -17,7 +17,7 @@ import { initAccount } from "./account.js";
 import { initUsers } from "./users.js";
 
 export const $ = (id) => document.getElementById(id);
-export const state = { proxied: false, me: null, admin: false, voices: [], models: null, info: null };
+export const state = { me: null, admin: false, voices: [], models: null, info: null };
 
 // "account" is every signed-in user's own tab, so it is here from the start. "users" is
 // admin-only and is pushed in (and its nav button revealed) the first time showApp sees
@@ -84,13 +84,10 @@ function showPasswordChange(message) {
 async function showApp() {
   $("signin").style.display = "none";
   $("app").style.display = "";
-  $("who").textContent = state.proxied
-    ? "via auris dashboard"
-    : state.me.principal + (state.admin ? " (admin)" : "");
-  $("who-avatar").replaceChildren(
-    avatarEl(state.proxied ? "auris dashboard" : state.me.email || state.me.principal, 30));
-  $("signout-btn").style.display = state.proxied ? "none" : "";
-  setStatus(true, state.proxied ? "Connected via proxy" : "Connected");
+  $("who").textContent = state.me.principal + (state.admin ? " (admin)" : "");
+  $("who-avatar").replaceChildren(avatarEl(state.me.email || state.me.principal, 30));
+  $("signout-btn").style.display = "";
+  setStatus(true, "Connected");
   if (state.admin) revealUsersTab();
   showTab(location.hash.replace("#", "") || "voices");
   if (booted) return;
@@ -124,7 +121,7 @@ function bindShell() {
     if ($("app").style.display === "none") return;
     if (!ev.detail.ok) setStatus(false, "Offline");
     else if ($("status-label").textContent === "Offline") {
-      setStatus(true, state.proxied ? "Connected via proxy" : "Connected");
+      setStatus(true, "Connected");
     }
   });
 }
@@ -178,12 +175,6 @@ async function boot() {
     location.reload();
   };
 
-  state.proxied = await auth.detectProxy();
-  if (state.proxied) {
-    state.me = { principal: "proxy", admin: false };
-    state.admin = await auth.probeAdmin();
-    return showApp();
-  }
   // auth.me() swallows its own 401 so the global handler doesn't fire on a cold load; every
   // other 401 anywhere in the app routes through showSignIn.
   const me = await auth.me();

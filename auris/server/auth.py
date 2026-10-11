@@ -111,9 +111,9 @@ async def auth_dependency(
 ) -> Principal:
     """Authenticate the request and stamp `request.state.principal`.
 
-    Two paths: `Authorization: Bearer <master-token | api-key>` (CLI, SDK, the dashboard
-    proxy), or the browser's `auris_session` cookie — which additionally needs the
-    `X-Auris-Client: dashboard` header as CSRF protection (a custom header cannot be sent
+    Two paths: `Authorization: Bearer <master-token | api-key>` (CLI, SDK), or the
+    browser's `auris_session` cookie (also via `auris dashboard`'s proxy, which relays it) —
+    which additionally needs the `X-Auris-Client: dashboard` header as CSRF protection (a custom header cannot be sent
     cross-origin without a CORS preflight, which this server never grants). The header is
     required on *every* cookie request, reads included, so no cookie route is left uncovered.
     A bearer request needs no such header: the browser will happily attach the cookie to it,

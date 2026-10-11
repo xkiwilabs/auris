@@ -2,8 +2,7 @@
 //
 // Every request is same-origin and carries `X-Auris-Client: dashboard`: the server requires it
 // on every cookie-authenticated /v1/* call as CSRF protection (a custom header cannot be sent
-// cross-origin without a preflight this server never grants). The bearer path — the `auris
-// dashboard` proxy, which injects Authorization server-side — ignores it.
+// cross-origin without a preflight this server never grants).
 //
 // The page holds no credential of its own: no token is ever read from or written to
 // localStorage/sessionStorage here. A 401 means the session is gone, so one handler sends the

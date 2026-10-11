@@ -26,16 +26,21 @@ Write-Host "==> installing auris client (no model) + example deps"
 & $pyexe -m pip install --quiet -e ".[client,audio]" requests openai
 
 Write-Host ""
-Write-Host "==> configuring the service (you can skip the token and add it later)"
-& $auris login
+Write-Host "==> where is the auris server? (ask whoever runs it for the address)"
+& $auris login --no-token
 
 Write-Host ""
-Write-Host "Client ready. Activate it in each new shell with:  .\.venv-client\Scripts\Activate.ps1"
+Write-Host "Client ready. In this terminal, and in every new one, first run:"
 Write-Host ""
-Write-Host "Then:"
-Write-Host "  auris dashboard                 # open the dashboard locally (mic works here)"
+Write-Host "  .\.venv-client\Scripts\Activate.ps1"
+Write-Host ""
+Write-Host "Then open the dashboard and sign in there with your email and password (the mic works here):"
+Write-Host ""
+Write-Host "  auris dashboard"
+Write-Host ""
+Write-Host "The command-line tools need an API key as well. Make one in the dashboard (Account -> My API"
+Write-Host "keys -> Issue), then save it once with:  auris config token"
+Write-Host ""
 Write-Host "  auris voices                    # list the service's voices"
 Write-Host "  auris record `"Me`"               # record from your mic and upload (clone your voice)"
 Write-Host "  auris tts narrator-uk-f --text `"Hello.`" --out hello.mp3"
-Write-Host ""
-Write-Host "Add or change your token any time:  auris config token"
