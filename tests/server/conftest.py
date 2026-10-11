@@ -209,7 +209,8 @@ def seed_voice(client):
         conn = client.app.state.db
 
         async def go():
-            sp = await speakers.create_speaker(conn, name, owner_id=owner.id, visibility=visibility)
+            owner_id = owner.id if owner else None  # None: a legacy unowned voice
+            sp = await speakers.create_speaker(conn, name, owner_id=owner_id, visibility=visibility)
             audio = np.zeros(settings.sample_rate, dtype=np.float32)
             await cloning.add_reference(
                 conn, settings.voices_dir, sp.id, audio, settings.sample_rate, "hello world", 1.0

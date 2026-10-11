@@ -147,7 +147,9 @@ remembered per browser and is off by default.
 "Use" means listed in `auris voices` / the Voices tab, and usable with `auris tts`/`auris
 say`/`/v1/tts`/`/v1/audio/speech`. "Modify" means rename, delete, add/remove a clip, or flip the
 share toggle — refused for anyone but the owner or an admin, and for an unowned voice, refused
-for everyone but an admin until someone adopts it (next section). An unowned API key — one minted
+for everyone but an admin until someone adopts it (next section). Playing a voice's stored reference recordings
+(the ▶ beside each clip) follows the same rule: a shared voice lets everyone generate speech and
+read its transcripts, but the raw recording of the person stays with its owner and admins. An unowned API key — one minted
 before keys required an `--owner` — can never modify *any* voice, including one it could otherwise
 see, because it has no account to own the result; see "Rotating your own API key" above. The
 **local CLI on the box**, run with no signed-in account at all, is a special case: it sees and can

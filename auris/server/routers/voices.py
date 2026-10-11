@@ -191,10 +191,10 @@ async def clip_audio(
 ):
     """The stored reference clip itself, so the dashboard can play back what a voice copies.
 
-    Read access, exactly as listing the clips: shared voices are readable by everyone, and
-    another account's private one is a 404 (from get_for_read), not a 403."""
+    Owner and admins only (`get_for_listen`): a shared voice is usable by everyone, but its raw
+    recording is not. Another account's private voice is still a 404, a shared one a 403."""
     viewer = _viewer(request)
-    speaker = await voice_access.get_for_read(
+    speaker = await voice_access.get_for_listen(
         conn, name, viewer, await voice_access.owner_id_for(conn, owner)
     )
     filename = f"clip_{index:03d}.wav"

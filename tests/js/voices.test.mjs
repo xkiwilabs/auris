@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mayChangeVisibility } from "../../auris/server/static/js/voice-visibility.js";
+import { mayChangeVisibility, mayPlayClips } from "../../auris/server/static/js/voice-visibility.js";
 
 test("the owner may change their own voice's visibility", () => {
   const voice = { owner: "a@example.com" };
@@ -32,4 +32,14 @@ test("a viewer the page can't identify gets no toggle", () => {
   const voice = { owner: "a@example.com" };
   assert.equal(mayChangeVisibility(voice, { principal: "x" }, false), false);
   assert.equal(mayChangeVisibility(voice, null, false), false);
+});
+
+test("only the owner and admins may play a voice's recordings", () => {
+  const me = { email: "a@example.com" };
+  assert.equal(mayPlayClips({ owner: "a@example.com" }, me, false), true);
+  assert.equal(mayPlayClips({ owner: "b@example.com" }, me, false), false); // shared or not
+  assert.equal(mayPlayClips({ owner: null }, me, false), false); // unowned: admin-only
+  assert.equal(mayPlayClips({ owner: "b@example.com" }, me, true), true);
+  assert.equal(mayPlayClips({ owner: null }, me, true), true);
+  assert.equal(mayPlayClips({ owner: "a@example.com" }, null, false), false);
 });

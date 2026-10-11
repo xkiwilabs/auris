@@ -13,3 +13,12 @@ export function mayChangeVisibility(voice, me, isAdmin) {
   if (isAdmin) return true;
   return !!me && !!me.email && voice.owner === me.email;
 }
+
+// Who may hear a voice's stored recordings: its owner and admins, as GET …/clips/{i}/audio
+// (voice_access.get_for_listen) enforces. A shared voice is usable by everyone, its raw recording
+// is not; an unowned one is admin-only, like every other change to it.
+export function mayPlayClips(voice, me, isAdmin) {
+  if (isAdmin) return true;
+  if (voice.owner == null) return false;
+  return !!me && !!me.email && voice.owner === me.email;
+}

@@ -114,6 +114,23 @@ async def get_for_write(
     return speaker
 
 
+async def get_for_listen(
+    conn: aiosqlite.Connection, name: str, viewer: Viewer, owner: str | None = None
+) -> Speaker:
+    """The voice, if this viewer may hear its stored reference recordings.
+
+    Stricter than reading: a shared voice lets every account synthesise with it and see its
+    transcripts, but the raw recording of the person stays with its owner and admins — the same
+    viewers `may_mutate` allows, so a legacy unowned voice is admin-only here too. Visibility is
+    checked first, as in `get_for_write`: someone else's private voice is a 404, and only a voice
+    the caller can already see answers 403.
+    """
+    speaker = await get_for_read(conn, name, viewer, owner)
+    if not viewer.may_mutate(speaker.owner_id):
+        raise Forbidden(f"only the owner of {name!r} or an admin can play its recordings")
+    return speaker
+
+
 async def find_for_clone(conn: aiosqlite.Connection, name: str, viewer: Viewer) -> Speaker | None:
     """The voice this clone would append to, or None if it would create a new one.
 

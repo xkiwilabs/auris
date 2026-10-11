@@ -415,14 +415,15 @@ def test_the_owner_can_play_back_their_reference_clip(seed_user, seed_voice, as_
 
 @pytest.mark.parametrize(
     "visibility,expected_status",
-    [("shared", 200), ("private", 404)],
-    ids=["shared-is-readable", "private-is-invisible"],
+    [("shared", 403), ("private", 404)],
+    ids=["shared-is-refused", "private-is-invisible"],
 )
-def test_another_users_clip_plays_only_if_their_voice_is_shared(
+def test_another_users_recording_is_never_playable(
     seed_user, seed_voice, as_user, visibility, expected_status
 ):
-    # The same rule as listing the clips: readable when shared, and a private voice answers 404,
-    # never 403, so the status code can't confirm that the name exists.
+    # A shared voice is usable by everyone, but the raw recording of the person stays with its
+    # owner: 403 for a voice the caller can already see, and a private one is still 404, never
+    # 403, so the status code can't confirm that the name exists.
     bob = seed_user("bob@example.com")
     alice = seed_user("alice@example.com")
     seed_voice("bobs-voice", bob, visibility=visibility)
@@ -430,6 +431,30 @@ def test_another_users_clip_plays_only_if_their_voice_is_shared(
     assert as_user(alice).get(f"/v1/voices/bobs-voice/clips/{index}/audio").status_code == (
         expected_status
     )
+
+
+def test_a_shared_voices_transcripts_stay_readable_to_everyone(seed_user, seed_voice, as_user):
+    bob = seed_user("bob@example.com")
+    alice = seed_user("alice@example.com")
+    seed_voice("bobs-voice", bob, visibility="shared")
+    assert as_user(alice).get("/v1/voices/bobs-voice/clips").status_code == 200
+
+
+def test_an_admin_can_play_anyones_recording(seed_user, seed_voice, as_user):
+    bob = seed_user("bob@example.com")
+    boss = seed_user("boss@example.com", role="admin")
+    seed_voice("bobs-voice", bob, visibility="shared")
+    index = _clip_index(as_user(bob), "bobs-voice")
+    assert as_user(boss).get(f"/v1/voices/bobs-voice/clips/{index}/audio").status_code == 200
+
+
+def test_an_unowned_voices_recording_is_admin_only(seed_user, seed_voice, as_user):
+    # Readable by every account, but nobody can prove they recorded it — the same rule as
+    # changing it.
+    alice = seed_user("alice@example.com")
+    seed_voice("legacy", None, visibility="shared")
+    index = _clip_index(as_user(alice), "legacy")
+    assert as_user(alice).get(f"/v1/voices/legacy/clips/{index}/audio").status_code == 403
 
 
 def test_a_clip_that_does_not_exist_is_a_404(seed_user, seed_voice, as_user):

@@ -2,12 +2,14 @@
 //
 // "Play" (on a card or in the detail panel) synthesises the fixed SAMPLE_TEXT in that voice and
 // caches the blob URL per voice for the life of the page. The ▶ beside each clip plays the stored
-// reference itself (GET …/clips/{index}/audio) — what the clone is copying — one at a time. Every voice name reaches the DOM through textContent: a name may contain
+// reference itself (GET …/clips/{index}/audio) — what the clone is copying — one at a time, and
+// only for the voice's owner and admins (mayPlayClips). Every voice name reaches the DOM through
+// textContent: a name may contain
 // < > " ' (only / \ and control characters are refused), so it must never be parsed as markup.
 "use strict";
 import { api, getJson, setMsg, fmtSeconds } from "./api.js";
 import { recordClip, micAvailable, levelMeter } from "./audio.js";
-import { mayChangeVisibility } from "./voice-visibility.js";
+import { mayChangeVisibility, mayPlayClips } from "./voice-visibility.js";
 import { groupVoices, ownerLabel, mmss, fmtBytes } from "./view-logic.js";
 import { PASSAGES, nextPassage, countdownStep, COUNTDOWN_S } from "./passages.js";
 import { loadPrefs, setPref } from "./prefs.js";
@@ -222,10 +224,11 @@ async function select(state, name) {
     return;
   }
   if (selected !== name) return; // the user picked another voice while this loaded
-  body.replaceChildren(clipsSection(state, name, clips));
+  body.replaceChildren(clipsSection(state, v, clips));
 }
 
-function clipsSection(state, name, clips) {
+function clipsSection(state, v, clips) {
+  const name = v.name, playable = mayPlayClips(v, state.me, state.admin);
   const frag = document.createDocumentFragment();
   const ol = document.createElement("ol");
   ol.className = "clips";
@@ -246,7 +249,9 @@ function clipsSection(state, name, clips) {
     del.dataset.clip = c.index;
     del.setAttribute("aria-label", "Delete clip " + c.index);
     del.addEventListener("click", () => deleteClip(state, name, c.index));
-    li.append(textEl("span", "clip-idx", String(c.index)), main, play, del);
+    li.append(textEl("span", "clip-idx", String(c.index)), main);
+    if (playable) li.append(play);
+    li.append(del);
     ol.append(li);
   }
   const add = textEl("button", "btn block", "+ Add a clip");
