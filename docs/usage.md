@@ -43,6 +43,20 @@ auris voices --owner alice@example.com   # only this account's voices
 
 Use any name shown here as the `SPEAKER` argument to `auris tts` / `auris say`.
 
+The built-in presets (Kokoro voice in brackets):
+
+| Preset | Voice |
+|--------|-------|
+| `narrator-us-f` / `narrator-us-m` | US English, female (`af_heart`) / male (`am_michael`) |
+| `narrator-uk-f` / `narrator-uk-m` | UK English, female (`bf_emma`) / male (`bm_george`) |
+| `bright-f` | US English, female, bright (`af_bella`) |
+| `calm-m` | US English, male, low and steady (`am_puck`; `am_adam` until it proved the weakest Kokoro voice) |
+| `low-f` | US English, female, lower-pitched (`af_kore`) |
+| `soft-f` | US English, female, soft and slow (`af_nicole`) |
+| `lively-m` | US English, male, lively (`am_fenrir`) |
+| `bright-uk-f` | UK English, female, bright (`bf_isabella`) |
+| `deep-uk-m` | UK English, male, deep (`bm_fable`) |
+
 On a shared service, **a cloned voice is private by default** — visible and usable only by
 whoever created it (and an admin). Its owner shares it with everyone else, and can take that back:
 

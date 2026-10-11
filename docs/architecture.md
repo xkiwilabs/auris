@@ -76,7 +76,7 @@ Layered, with the model behind an abstract interface so it can be swapped/mocked
   models take a `PresetVoice` (a built-in voice id). Each model type-guards its conditioning.
   - **Two models today: f5-TTS (cloning) and Kokoro (presets).** f5-TTS weights are
     **CC-BY-NC (non-commercial)** — fine here, research use. **Kokoro-82M** (Apache-2.0, 24 kHz
-    native) provides ~6 curated **preset voices** usable before cloning; it's preset-only (no
+    native) provides 11 curated **preset voices** usable before cloning; it's preset-only (no
     cloning) and complements f5. `auris/models/presets.py` holds the curated table;
     `voice_library/resolve.py` maps a `voice` name → owning model + conditioning (preset names are
     reserved). Kokoro needs the `kokoro` extra + **espeak-ng** (a system dep like ffmpeg), is
