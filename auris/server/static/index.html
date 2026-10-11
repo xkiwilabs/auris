@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0d12">
+  <title>auris</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="preload" href="/static/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <!-- One gradient, referenced by every inline copy of the brand mark (.logo path). -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs><linearGradient id="auris-grad" x1="0" y1="0" x2="32" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8b7cff"/><stop offset="1" stop-color="#2dd4bf"/></linearGradient></defs>
+  </svg>
+
+  <div id="signin" class="overlay" style="display:none;">
+    <form id="signin-form" class="card auth-card" autocomplete="on">
+      <div class="auth-mark">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 13v6M10 7v18M16 3.5v25M22 9v14M28 13.5v5"/></svg>
+        <h1>Sign in to auris</h1>
+        <p>Use the email and password your administrator gave you.</p>
+      </div>
+      <label class="field"><span>Email</span>
+        <input id="signin-email" type="email" name="email" placeholder="you@example.com"
+               autocomplete="username" required autofocus></label>
+      <label class="field"><span>Password</span>
+        <input id="signin-password" type="password" name="password"
+               autocomplete="current-password" required></label>
+      <button type="submit" class="btn primary block">Sign in</button>
+      <div id="signin-msg" class="msg"></div>
+    </form>
+
+    <form id="pwchange-form" class="card auth-card" style="display:none;" autocomplete="on">
+      <div class="auth-mark">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 13v6M10 7v18M16 3.5v25M22 9v14M28 13.5v5"/></svg>
+        <h1>Choose a new password</h1>
+        <p>This account must set its own password before it can be used.</p>
+      </div>
+      <label class="field"><span>Current password</span>
+        <input id="pwchange-current" type="password" autocomplete="current-password" required></label>
+      <label class="field"><span>New password <small>12+ characters</small></span>
+        <input id="pwchange-new" type="password" autocomplete="new-password" minlength="12" required></label>
+      <label class="field"><span>Confirm new password</span>
+        <input id="pwchange-confirm" type="password" autocomplete="new-password" minlength="12" required></label>
+      <button type="submit" class="btn primary block">Set password</button>
+      <div id="pwchange-msg" class="msg"></div>
+    </form>
+  </div>
+
+  <div id="app" class="shell" style="display:none;">
+    <aside id="side" class="side">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 13v6M10 7v18M16 3.5v25M22 9v14M28 13.5v5"/></svg>
+        <span>auris</span>
+      </div>
+      <nav id="tabs" class="nav" aria-label="Main">
+        <button class="tab" id="tab-voices" data-tab="voices" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+          <span>Voices</span></button>
+        <button class="tab" id="tab-synth" data-tab="synth" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
+          <span class="long">Synthesize</span><span class="short">Speak</span></button>
+        <button class="tab" id="tab-transcribe" data-tab="transcribe" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 10h16M4 14h10M4 18h7"/></svg>
+          <span>Transcribe</span></button>
+        <button class="tab" id="tab-more" type="button" aria-expanded="false" aria-controls="side-more">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg>
+          <span>More</span></button>
+      </nav>
+      <div id="side-more" class="side-more">
+        <div class="nav-label">Manage</div>
+        <nav class="nav" aria-label="Manage">
+          <button class="tab" id="tab-settings" data-tab="settings" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+            <span>Settings</span></button>
+          <button class="tab" id="tab-account" data-tab="account" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+            <span>Account</span></button>
+          <button class="tab" id="tab-users" data-tab="users" type="button" style="display:none;">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6"/></svg>
+            <span>Users</span></button>
+        </nav>
+        <div class="side-foot">
+          <div class="status"><span id="status-dot" class="dot" title="connection status"></span><span id="status-label">Connecting…</span></div>
+          <div class="user-chip"><span id="who-avatar"></span><span id="who" class="who"></span></div>
+          <button id="signout-btn" class="btn ghost block" type="button" style="display:none;">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4"/></svg>
+            Sign out</button>
+        </div>
+      </div>
+    </aside>
+
+    <main id="content" class="content">
+
+    <!-- ================= Voices ================= -->
+    <section id="panel-voices" class="panel">
+      <div class="page-head">
+        <div><h1>Voices</h1><p class="sub">Your cloned voices and the built-in presets.</p></div>
+        <div class="head-actions">
+          <label class="search"><span class="visually-hidden">Search voices</span>
+            <input id="voice-search" type="search" placeholder="Search voices" autocomplete="off"></label>
+          <button type="button" id="new-voice-btn" class="btn primary">+ New voice</button>
+        </div>
+      </div>
+      <div id="voices-msg" class="msg"></div>
+      <audio id="sample-audio" preload="none"></audio>
+      <div id="voice-lib" class="library">
+        <div class="library-main">
+          <ul id="voices-list" class="card-grid"><li class="empty-card">Loading…</li></ul>
+          <section id="presets-section" hidden>
+            <h2 class="section-title">Built-in voices</h2>
+            <ul id="presets-list" class="card-grid compact"></ul>
+          </section>
+        </div>
+        <aside id="voice-card" class="detail" aria-label="Voice details">
+          <div id="vc-empty" class="detail-empty">Select a voice to see its clips and hear a sample.</div>
+          <div id="vc-head" class="detail-head" hidden>
+            <span id="vc-avatar"></span>
+            <div class="grow"><h2 id="vc-title"></h2><span id="voice-owner"></span></div>
+            <details class="menu" id="vc-menu">
+              <summary aria-label="Voice actions">⋯</summary>
+              <div class="menu-list">
+                <button type="button" id="vc-rename">Rename</button>
+                <button type="button" id="vc-delete" class="danger">Delete voice</button>
+              </div>
+            </details>
+            <button type="button" id="voice-close" class="icon-btn detail-close" aria-label="Close">✕</button>
+          </div>
+          <label class="switch-row" id="voice-visibility-row" style="display:none;">
+            <span><b>Shared with everyone</b><small>Every signed-in account can use this voice.</small></span>
+            <input type="checkbox" id="voice-visibility" class="switch" role="switch">
+          </label>
+          <div id="vc-player" hidden></div>
+          <audio id="vc-audio"></audio>
+          <div id="voice-card-body"></div>
+          <div id="vc-msg" class="msg"></div>
+        </aside>
+        <div id="voice-backdrop" class="sheet-backdrop"></div>
+      </div>
+    </section>
+
+    <!-- ================= Transcribe ================= -->
+    <section id="panel-transcribe" class="panel" style="display:none;">
+      <div class="page-head">
+        <div><h1>Transcribe</h1><p class="sub">Turn a recording into text, with timestamps.</p></div>
+      </div>
+      <div id="transcribe-disabled" class="banner" style="display:none;">
+        Transcription is switched off on this server.</div>
+      <div class="split">
+        <div class="stack">
+          <div class="card">
+            <div id="stt-drop" class="dropzone">
+              <input id="stt-file" type="file" accept="audio/*" class="visually-hidden">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+              <b>Drop an audio file</b>
+              <span class="small">or click to browse — mp3, wav, m4a, ogg and more</span>
+            </div>
+            <div class="or-row">
+              <button type="button" id="stt-record-btn" class="link-btn" style="display:none;">● Record from microphone</button>
+              <span id="stt-record-status" class="small"></span>
+            </div>
+            <div id="stt-filerow" class="file-row" hidden>
+              <span class="file-ic" aria-hidden="true">♪</span>
+              <div class="grow"><b id="stt-filename"></b><span id="stt-filemeta" class="small"></span></div>
+              <button id="stt-run-btn" type="button" class="btn primary">Transcribe</button>
+            </div>
+            <div id="stt-msg" class="msg"></div>
+          </div>
+          <div class="card" id="stt-result" style="display:none;">
+            <div class="card-head"><h2>Transcript</h2><span id="stt-stats" class="small"></span></div>
+            <div class="chip-row">
+              <button id="stt-copy" type="button" class="btn small">Copy</button>
+              <button id="stt-dl-txt" type="button" class="chip">⤓ .txt</button>
+              <button id="stt-dl-srt" type="button" class="chip">⤓ .srt</button>
+              <button id="stt-dl-vtt" type="button" class="chip">⤓ .vtt</button>
+            </div>
+            <ol id="stt-segments" class="segments"></ol>
+            <textarea id="stt-text" class="visually-hidden" readonly tabindex="-1" aria-hidden="true"></textarea>
+          </div>
+        </div>
+        <div class="card side-card">
+          <h2>Options</h2>
+          <label class="field"><span>Model</span><select id="stt-model"></select></label>
+          <label class="field"><span>Language <small>“auto” detects it</small></span>
+            <input id="stt-language" value="auto" placeholder="auto"></label>
+          <label class="switch-row"><span><b>Translate to English</b><small>Any language in, English out.</small></span>
+            <input id="stt-translate" type="checkbox" class="switch" role="switch"></label>
+          <label class="switch-row"><span><b>Word timestamps</b><small>Slower; per-word timing in the result.</small></span>
+            <input id="stt-words" type="checkbox" class="switch" role="switch"></label>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= Synthesize ================= -->
+    <section id="panel-synth" class="panel" style="display:none;">
+      <div class="page-head">
+        <div><h1>Synthesize</h1><p class="sub">Type something and hear it in any voice.</p></div>
+      </div>
+      <div id="synth-disabled" class="banner" style="display:none;">
+        Text-to-speech is switched off on this server.</div>
+      <div class="split">
+        <div class="stack">
+          <div class="card compose">
+            <label class="visually-hidden" for="text-input">Text to speak</label>
+            <textarea id="text-input" class="big-text"
+                      placeholder="Type text to speak… or just press Speak to hear the voice"></textarea>
+            <div class="text-foot">
+              <span id="char-count" class="small count">0</span>
+              <span class="small kbd-hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> to speak</span>
+              <span class="grow"></span>
+              <button id="stop-btn" type="button" class="btn" disabled>■ Stop</button>
+              <button id="speak-btn" type="button" class="btn primary">▶ Speak</button>
+            </div>
+          </div>
+          <div class="card" id="synth-output">
+            <div class="card-head">
+              <h2>Output</h2>
+              <a id="download" class="btn small" style="display:none;" download="auris.mp3">⤓ Save</a>
+            </div>
+            <p id="synth-empty" class="empty">Press Speak and the audio appears here.</p>
+            <div id="speak-live" class="live" hidden>
+              <span class="live-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+              <span>Speaking…</span><span id="speak-live-time">0:00</span>
+            </div>
+            <div id="synth-player" hidden></div>
+            <audio id="player"></audio>
+            <div id="speak-msg" class="msg"></div>
+          </div>
+        </div>
+        <div class="card side-card">
+          <h2>Voice settings</h2>
+          <label class="field"><span>Voice</span>
+            <span class="voice-pick"><span id="voice-avatar"></span><select id="voice-select"></select></span></label>
+          <label class="field"><span>Speed <output id="speed-out" for="speed">1.00×</output></span>
+            <input id="speed" type="range" min="0.3" max="2.0" step="0.05" value="1.0"></label>
+          <div class="field"><span>Mode</span>
+            <div class="seg" id="mode-seg" role="group" aria-label="Mode">
+              <button type="button" data-value="full">Full file</button>
+              <button type="button" data-value="stream">Stream</button>
+            </div>
+            <select id="mode-select" hidden><option value="full">full</option><option value="stream">stream</option></select>
+          </div>
+          <div class="field"><span>Format <small id="format-note" hidden>Stream is always WAV</small></span>
+            <div class="seg" id="format-seg" role="group" aria-label="Format">
+              <button type="button" data-value="mp3">MP3</button>
+              <button type="button" data-value="opus">Opus</button>
+              <button type="button" data-value="wav">WAV</button>
+            </div>
+            <select id="format-select" hidden><option value="mp3">mp3</option><option value="opus">opus</option><option value="wav">wav</option></select>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= Settings ================= -->
+    <section id="panel-settings" class="panel narrow" style="display:none;">
+      <div class="page-head">
+        <div><h1>Settings</h1><p class="sub">What this server runs, and your defaults in this browser.</p></div>
+      </div>
+      <nav class="jump" aria-label="Sections">
+        <button type="button" data-jump="settings-server">Server</button>
+        <button type="button" data-jump="settings-prefs">My preferences</button>
+        <button type="button" data-jump="admin-card" id="jump-keys" hidden>API keys</button>
+      </nav>
+      <section class="card" id="settings-server">
+        <h2>Server</h2>
+        <div id="info-body" class="empty">Loading…</div>
+      </section>
+      <section class="card" id="settings-prefs">
+        <div class="card-head"><h2>My preferences</h2><span class="small">This browser only</span></div>
+        <form id="prefs-form" class="form-grid" autocomplete="off">
+          <label class="field"><span>Default STT model</span><select id="pref-asr-model"></select></label>
+          <label class="field"><span>Language</span><input id="pref-language" placeholder="auto"></label>
+          <label class="field"><span>Default voice</span><select id="pref-voice"></select></label>
+          <label class="field"><span>Speed</span>
+            <input id="pref-speed" type="number" min="0.3" max="2.0" step="0.05"></label>
+          <label class="field"><span>Format</span>
+            <select id="pref-format"><option value="mp3">mp3</option><option value="opus">opus</option><option value="wav">wav</option></select></label>
+          <label class="field"><span>Mode</span>
+            <select id="pref-mode"><option value="full">full file</option><option value="stream">stream</option></select></label>
+        </form>
+        <p class="small prefs-note">Sent with each request. They never change the server's own defaults.</p>
+      </section>
+      <section class="card" id="admin-card" style="display:none;">
+        <div class="card-head"><h2>API keys</h2><span class="pill accent">Admin</span></div>
+        <form id="key-form" class="inline-form" autocomplete="off">
+          <label class="field grow"><span>Key name</span>
+            <input id="key-name" placeholder="who is this key for? e.g. alice-laptop" required></label>
+          <label class="field"><span>Owner</span><select id="key-owner"></select></label>
+          <button type="submit" class="btn primary">Issue key</button>
+        </form>
+        <div id="key-form-proxied" class="hint" style="display:none;">
+          Not available through <code>auris dashboard</code>: the proxy injects the master token
+          server-side, so a key issued here would have no owner account and could not create or
+          modify any voice. Run <code>auris keys add &lt;name&gt; --owner &lt;email&gt;</code> on
+          the server box instead.
+        </div>
+        <div id="key-issued" class="callout ok" style="display:none;"></div>
+        <div id="keys-msg" class="msg"></div>
+        <div class="table-scroll">
+          <table id="keys-table" class="table">
+            <thead><tr><th>Name</th><th>Owner</th><th>Created</th><th>Last used</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <!-- ================= Account ================= -->
+    <section id="panel-account" class="panel narrow" style="display:none;">
+      <div class="page-head profile">
+        <span id="account-avatar"></span>
+        <div class="grow">
+          <p class="eyebrow">Account</p>
+          <h1 id="account-email"></h1>
+          <span id="account-role" class="pill accent" hidden>Admin</span>
+        </div>
+      </div>
+      <nav class="jump" aria-label="Sections">
+        <button type="button" data-jump="account-pw-card" id="jump-pw">Password</button>
+        <button type="button" data-jump="account-keys-card">My API keys</button>
+      </nav>
+      <section class="card" id="account-pw-card">
+        <h2>Change password</h2>
+        <form id="account-pw-form" class="stack-form" autocomplete="off">
+          <label class="field"><span>Current password</span>
+            <input id="account-pw-current" type="password" autocomplete="current-password" required></label>
+          <label class="field"><span>New password <small>12+ characters</small></span>
+            <input id="account-pw-new" type="password" autocomplete="new-password" minlength="12" required></label>
+          <label class="field"><span>Confirm new password</span>
+            <input id="account-pw-confirm" type="password" autocomplete="new-password" minlength="12" required></label>
+          <div><button type="submit" class="btn primary">Change password</button></div>
+        </form>
+        <div id="account-msg" class="msg"></div>
+      </section>
+      <section class="card" id="account-pw-proxied" style="display:none;">
+        <h2>Change password</h2>
+        <p class="hint">Not available through <code>auris dashboard</code>: the local proxy
+          forwards only the service API, so a password change cannot reach the server from here.
+          Open the service's own address in a browser and change it there.</p>
+      </section>
+      <section class="card" id="account-keys-card">
+        <h2 id="account-keys-title">My API keys</h2>
+        <p class="hint keys-hint">For scripts, agents and the <code>auris</code> command line. A key can't sign in to this dashboard.</p>
+        <form id="account-key-form" class="inline-form" autocomplete="off">
+          <label class="field grow"><span>Key name</span>
+            <input id="account-key-name" placeholder="name this key, e.g. laptop" required></label>
+          <button type="submit" class="btn primary">Issue key</button>
+        </form>
+        <div id="account-key-form-proxied" class="hint" style="display:none;">
+          Issuing and rotating a key is not available through <code>auris dashboard</code>: the
+          proxy injects the master token server-side, so the page never learns which account it
+          is and a key minted here would have no owner. Run <code>auris keys add &lt;name&gt;
+          --owner &lt;email&gt;</code> on the server box, or sign in with an account at the
+          service's own address to manage your own keys here.
+        </div>
+        <div id="account-issued-box" class="callout ok" style="display:none;">
+          <p>Copy this key now — you will not see it again:</p>
+          <div class="secret"><code id="account-issued"></code>
+            <button type="button" class="btn small" id="account-copy">Copy</button></div>
+        </div>
+        <ul id="account-keys" class="key-list"></ul>
+        <div id="account-keys-msg" class="msg"></div>
+      </section>
+    </section>
+
+    <!-- ================= Users (admin) ================= -->
+    <section id="panel-users" class="panel narrow" style="display:none;">
+      <div class="page-head">
+        <div><h1>Users</h1><p class="sub">Accounts that can sign in to this dashboard.</p></div>
+      </div>
+      <section class="card">
+        <h2>Create an account</h2>
+        <form id="users-form" class="inline-form" autocomplete="off">
+          <label class="field grow"><span>Email</span>
+            <input id="users-email" type="email" placeholder="name@example.com" required></label>
+          <label class="field"><span>Role</span>
+            <select id="users-role"><option value="user">user</option><option value="admin">admin</option></select></label>
+          <button type="submit" class="btn primary">Create</button>
+        </form>
+        <div id="users-issued-box" class="callout ok" style="display:none;">
+          <p>Copy this password now — it will not be shown again. They set their own on first sign-in.</p>
+          <div class="secret"><code id="users-issued"></code>
+            <button type="button" class="btn small" id="users-copy">Copy</button></div>
+        </div>
+        <div id="users-msg" class="msg"></div>
+      </section>
+      <section class="card">
+        <h2>Accounts</h2>
+        <table id="users-table" class="table">
+          <thead><tr><th>Account</th><th>Role</th><th>Status</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </section>
+
+    </main>
+  </div>
+  <dialog id="new-voice" class="modal wide" aria-labelledby="nv-title">
+    <form id="clone-form" autocomplete="off">
+      <div class="card-head">
+        <h2 id="nv-title">New voice</h2>
+        <button type="button" class="icon-btn" id="nv-close" aria-label="Close">✕</button>
+      </div>
+      <label class="field"><span>Name</span>
+        <input id="clone-name" placeholder="e.g. narrator" required></label>
+      <div class="seg" id="nv-source" role="group" aria-label="Clip source">
+        <button type="button" data-value="record" aria-pressed="true">Record</button>
+        <button type="button" data-value="upload" aria-pressed="false">Upload</button>
+      </div>
+      <div id="nv-record" class="rec-panel">
+        <button type="button" id="record-btn" class="rec-btn" aria-label="Start recording"></button>
+        <canvas id="rec-wave" aria-hidden="true"></canvas>
+        <div class="rec-bar"><i id="rec-progress"></i></div>
+        <div class="rec-legend"><span>0:00</span><span>3 s minimum</span><span id="rec-time">0:00 / 0:10</span></div>
+        <div class="small" id="record-status"></div>
+      </div>
+      <div id="nv-upload" hidden>
+        <div id="clone-drop" class="dropzone">
+          <input id="clone-file" type="file" accept="audio/*" class="visually-hidden">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+          <b>Drop an audio clip</b>
+          <span class="small">or click to browse · about 10 seconds of clear speech</span>
+        </div>
+        <div class="small" id="upload-hint"></div>
+      </div>
+      <div id="nv-file" class="file-row" hidden>
+        <span class="file-ic" aria-hidden="true">♪</span>
+        <div class="grow"><b id="nv-file-name"></b><span id="nv-file-meta" class="small"></span></div>
+        <button type="button" class="icon-btn" id="nv-file-clear" aria-label="Remove this clip">✕</button>
+      </div>
+      <label class="field"><span>What you said <small>optional — transcribed automatically</small></span>
+        <input id="clone-reftext" placeholder="Leave blank to transcribe the clip"></label>
+      <div id="clone-msg" class="msg"></div>
+      <div class="actions">
+        <button type="button" class="btn ghost" id="nv-cancel">Cancel</button>
+        <button type="submit" class="btn primary" id="nv-submit">Create voice</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dialog" class="modal" aria-labelledby="dialog-title">
+    <form id="dialog-form" method="dialog">
+      <h2 id="dialog-title"></h2>
+      <p id="dialog-body"></p>
+      <label class="field" id="dialog-field" hidden><span id="dialog-label"></span>
+        <input id="dialog-input" autocomplete="off"></label>
+      <div class="actions">
+        <button type="button" class="btn ghost" id="dialog-cancel">Cancel</button>
+        <button type="submit" class="btn primary" id="dialog-ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+auris — third-party model & license notice
+===========================================
+
+The auris source code in this repository is licensed under the MIT License (see LICENSE).
+That license covers ONLY the auris code — not the models or libraries it uses.
+
+IMPORTANT — model weights are NOT MIT:
+
+  * f5-TTS weights (downloaded at runtime from Hugging Face: SWivid/F5-TTS) are released under
+    CC-BY-NC-4.0 (NON-COMMERCIAL), because of their Emilia training data. auris's MIT license
+    grants NO rights to these weights, and the non-commercial restriction is not removed by
+    finetuning. Voices generated with f5-TTS therefore MUST NOT be used commercially.
+    auris is intended for research and personal use. See https://github.com/SWivid/F5-TTS.
+
+Other models, all permissive:
+
+  * Kokoro-82M (preset voices; hexgrad/Kokoro-82M) — Apache-2.0.
+  * Whisper / faster-whisper (speech to text) — MIT.
+
+Bundled in this repository:
+
+  * Inter (the dashboard's typeface), auris/server/static/fonts/inter-latin-wght-normal.woff2 —
+    SIL Open Font License 1.1, full text alongside it in auris/server/static/fonts/OFL.txt.
+    Copyright the Inter Project Authors (https://github.com/rsms/inter).
+
+System dependencies you install yourself (not distributed with auris):
+
+  * espeak-ng (phonemes for Kokoro) — GPL-3.0. auris only invokes it; nothing of it is bundled.
+  * FFmpeg (decoding mp3/m4a) — LGPL/GPL depending on your build.
+
+Other Python dependencies (PyTorch, FastAPI, librosa, soundfile, etc.) carry their own
+(permissive) licenses; refer to each package for details.

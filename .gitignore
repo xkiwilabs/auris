@@ -1,0 +1,48 @@
+# Runtime data & model weights
+data/
+/models/
+spike/
+
+# Python
+.venv/
+# parked / old virtualenvs (e.g. .venv-broken-orpheus)
+.venv-*/
+uv.lock
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node / frontend
+node_modules/
+dist/
+
+# Generated audio output at the repo root (e.g. hi.wav from `auris tts`)
+/*.wav
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+
+# Env & OS
+.env
+.DS_Store
+Thumbs.db
+
+# Remote-user client config (URL + token)
+client.env
+
+# git worktrees for isolated feature work
+.worktrees/
+
+# .claude/ is ignored globally (local settings), but the project's own skills are part of the
+# test suite and belong in the repo. A .gitignore here outranks the global excludesFile, and
+# git will not descend into an excluded directory — hence un-ignoring .claude/ first.
+!.claude/
+.claude/*
+!.claude/skills/

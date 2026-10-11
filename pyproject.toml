@@ -1,0 +1,84 @@
+[project]
+name = "auris"
+version = "0.1.0"
+description = "Local-first, offline voice cloning + text-to-speech (CLI + HTTP service) on f5-TTS"
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Michael Richardson", email = "xkiwilabs@gmail.com" }]
+keywords = ["tts", "voice-cloning", "f5-tts", "speech", "fastapi"]
+dependencies = [
+    "typer>=0.12",
+    "pydantic-settings>=2.2",
+    "aiosqlite>=0.20",
+    "soundfile>=0.12",
+    "librosa>=0.10",
+    "numpy>=1.26",
+    "structlog>=24.1",
+]
+
+[project.optional-dependencies]
+# Audio device I/O for `auris record` (mic capture) and `auris play` (playback).
+# Optional so the core install stays headless-safe (no PortAudio); imported lazily.
+audio = [
+    "sounddevice>=0.4",
+]
+# Heavy model runtime — only needed for real inference and transcription, NOT for the
+# library/CLI or the model-free test suite (f5-TTS / faster-whisper are imported lazily).
+model = [
+    "f5-tts>=1.0",
+    "faster-whisper>=1.0",
+]
+# Kokoro preset-voice model (Apache-2.0). Lazy-imported; also needs the espeak-ng system
+# package (like ffmpeg) — installed by scripts/setup-workstation.sh.
+kokoro = [
+    "kokoro>=0.9",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    # HTTP client backing Starlette's TestClient (server route tests).
+    "httpx>=0.27",
+]
+# Remote-client profile (no GPU/model): the `auris` CLI in remote mode + `auris dashboard`.
+# Pair with the `audio` extra for `record`/`say` (mic + playback): `.[client,audio]`.
+client = [
+    "httpx>=0.27",
+]
+# HTTP service (`auris-server`). Optional so the core install stays light; FastAPI/uvicorn
+# are only needed to run the server, not the library/CLI or the model-free test suite.
+server = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+]
+
+[project.scripts]
+auris = "auris.cli.main:app"
+auris-server = "auris.server.run:main"
+
+[project.urls]
+Repository = "https://github.com/xkiwilabs/auris"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["auris*"]
+
+[tool.setuptools.package-data]
+"auris.server" = ["static/**"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+addopts = "-m 'not requires_model and not e2e'"
+markers = [
+    "requires_model: runs real inference (f5-TTS, Kokoro, faster-whisper); needs model weights",
+    "e2e: drives a real auris-server subprocess with real models over HTTP; needs a GPU",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
