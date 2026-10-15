@@ -17,9 +17,9 @@ from auris.client.mode import remote_client
 from auris.config import load_settings
 from auris.models import build_model
 from auris.models.base import PreparedReference
-from auris.voice_library import cloning, db, speakers, storage, users
+from auris.voice_library import blends, cloning, db, speakers, storage, users
 from auris.voice_library.exceptions import AmbiguousVoice, NameTaken
-from auris.voice_library.resolve import describe_ambiguity, preset_voice_rows
+from auris.voice_library.resolve import describe_ambiguity, is_preset, preset_voice_rows
 
 app = typer.Typer(help="List and manage voices.", invoke_without_command=True)
 
@@ -76,20 +76,22 @@ def _render(voices_list: list[dict], empty_note: str | None = None) -> None:
     typer.echo("Presets (built-in, usable now):")
     for p in presets:
         typer.echo(f"  {p['name']:<16} [preset]  {p.get('description') or ''}")
-    typer.echo("\nCloned voices:")
+    typer.echo("\nCloned and blended voices:")
     if not cloned:
         # `empty_note` replaces the clone hint when a filter, not an empty library, is why
         # there is nothing to show — "run 'auris clone'" would be wrong advice there.
         typer.echo("  " + (empty_note or "(none yet — run 'auris clone' or 'auris record')"))
     for c in cloned:
-        clips = c.get("clips", 0)
-        plural = "" if clips == 1 else "s"
         owner = c.get("owner") or "(unowned)"
         visibility = c.get("visibility") or "private"
-        typer.echo(
-            f"  {c['name']:<16} {clips} clip{plural} · {c.get('duration_s', 0.0):.1f}s"
-            f" · {visibility:<7} · {owner}"
-        )
+        if c.get("kind") == "blend":
+            what = "blend: " + " + ".join(
+                f"{round(part['weight'] * 100)}% {part['voice']}" for part in c.get("blend") or []
+            )
+        else:
+            clips = c.get("clips", 0)
+            what = f"{clips} clip{'' if clips == 1 else 's'} · {c.get('duration_s', 0.0):.1f}s"
+        typer.echo(f"  {c['name']:<16} {what} · {visibility:<7} · {owner}")
 
 
 async def _list_rows(owner: str | None) -> list[dict]:
@@ -112,13 +114,14 @@ async def _list_rows(owner: str | None) -> list[dict]:
     return list(preset_voice_rows()) + [
         {
             "name": n,
-            "kind": "cloned",
+            "kind": "blend" if b else "cloned",
             "clips": c,
             "duration_s": d,
             "owner": emails.get(o),
             "visibility": vis,
+            "blend": blends.from_json(b).public() if b else None,
         }
-        for (n, c, d, _m, o, vis) in stats
+        for (n, c, d, _m, o, vis, b) in stats
     ]
 
 
@@ -326,6 +329,60 @@ def unshare(
     _change_visibility(ctx, name, speakers.PRIVATE, owner)
 
 
+@app.command("blend")
+def blend(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Name for the blended voice (new, or one to re-mix)"),
+    parts: list[str] = typer.Argument(
+        ..., help="2 or 3 built-in voices as NAME=WEIGHT, e.g. narrator-uk-f=60 bright-uk-f=40"
+    ),
+    share: bool | None = typer.Option(
+        None, "--share/--private", help="Who can use it (default: private when new, else as is)"
+    ),
+) -> None:
+    """Mix 2–3 built-in voices into a new voice, or re-mix an existing blend.
+
+    Weights are any positive numbers and are scaled to add up to 100%. Only built-in voices can
+    be blended: a cloned voice is a recording, and two recordings can't be averaged.
+    """
+    if ctx.obj is not None:
+        # A blend is always written to the caller's own namespace, as `auris clone` is, so
+        # there is no other account's voice for `--owner` to pick.
+        typer.echo("auris voices blend writes your own voice, so --owner does not apply.", err=True)
+        raise typer.Exit(code=1)
+    try:
+        if is_preset(name):
+            raise ValueError(f"{name!r} is a built-in preset name; choose a different voice name")
+        items = [blends.parse_arg(p) for p in parts]
+        mix = blends.make(items)  # validated here too, so a typo fails before any call
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    visibility = None if share is None else (speakers.SHARED if share else speakers.PRIVATE)
+    sc = remote_client()
+    if sc is not None:
+        try:
+            info = sc.put_blend(name, items, visibility)
+        except ClientError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1)
+        typer.echo(f"{info['name']}: {info['description']} ({info['visibility']})")
+        return
+
+    async def go(conn: aiosqlite.Connection) -> tuple[speakers.Speaker, bool]:
+        # On the box the operator's voices are unowned, so always shared (see
+        # UNOWNED_IS_ALWAYS_SHARED): `--private` is refused by put_blend with the reason.
+        return await speakers.put_blend(conn, name, None, blends.to_json(mix), visibility)
+
+    try:
+        sp, created = _run(go)
+    except NameTaken as exc:  # a concurrent create; not a ValueError, so _run lets it through
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    verb = "created" if created else "re-mixed"
+    typer.echo(f"{verb} {sp.name}: {mix.describe()} ({sp.visibility})")
+
+
 @app.command("adopt")
 def adopt(
     ctx: typer.Context,
@@ -447,6 +504,7 @@ def refit(
             if owner is not None:
                 owner_id = await users.get_user_id_or_raise(conn, owner)
                 targets = [sp for sp in targets if sp.owner_id == owner_id]
+        targets = [sp for sp in targets if not sp.is_blend]  # a recipe has no recording to test
         emails = await users.emails_by_id(conn, {sp.owner_id for sp in targets if sp.owner_id})
         try:
             model = await asyncio.to_thread(_load_probe_model, settings) if targets else None

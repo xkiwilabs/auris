@@ -83,6 +83,19 @@ Layered, with the model behind an abstract interface so it can be swapped/mocked
     lazy-imported, and runs on `AURIS_KOKORO_DEVICE` (default GPU). The server builds **one
     `SynthesisPool` per model** (`build_pools`, `app.state.pools`); `AURIS_KOKORO_ENABLED=false`
     degrades cleanly to f5-only.
+  - **Blended voices are Kokoro mixes, stored as a recipe on an ordinary `speakers` row.**
+    `voice_library/blends.py` validates 2–3 distinct presets with positive weights (normalised to
+    sum to 1) and serialises them to the `speakers.blend` JSON column, keeping each preset's Kokoro
+    **voice id** so a blend keeps its sound if a preset name is re-pointed. The row has
+    `default_model='kokoro'` and no clips, so ownership, sharing, rename and delete apply
+    unchanged. `resolve.py` turns a blend row into `Resolved("kokoro", PresetVoice(heaviest id,
+    its lang, mix=...), "blend")`, and `KokoroModel` sums the weighted `load_voice` tensors
+    (cached per recipe). Only presets blend: f5, and every other cloner tried that takes identity
+    from a recording, snaps to one speaker rather than landing in between. Writes go
+    through `PUT /v1/voices/{name}/blend` (`voice_access.put_blend`: the target is found as for
+    a clone, except that an admin re-mixes another account's blend in place, and `?owner=` picks
+    one as for PATCH) or `auris voices blend`; a clip can never be added to a blend (`speakers.add_clip`
+    refuses), a cloned voice never becomes one, and `auris voices refit` skips them.
   - **Orpheus was evaluated and dropped (don't re-add without re-checking the findings).** An
     Orpheus (Apache-2.0) integration was designed, planned, and spiked on the RTX box; the spike
     found the `orpheus-speech` package does **preset voices only — no reference cloning** — and

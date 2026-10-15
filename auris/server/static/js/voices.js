@@ -6,11 +6,15 @@
 // only for the voice's owner and admins (mayPlayClips). Every voice name reaches the DOM through
 // textContent: a name may contain
 // < > " ' (only / \ and control characters are refused), so it must never be parsed as markup.
+//
+// A blended voice (kind "blend") is a recipe mixing 2–3 built-in voices, with no clips: its
+// detail panel shows the mix, and the Blend voices dialog creates or re-mixes one with a PUT to
+// …/blend, then plays a sample without closing so the mix can be tuned by ear.
 "use strict";
 import { api, getJson, setMsg, fmtSeconds } from "./api.js";
 import { recordClip, micAvailable, levelMeter } from "./audio.js";
-import { mayChangeVisibility, mayPlayClips } from "./voice-visibility.js";
-import { groupVoices, ownerLabel, mmss, fmtBytes } from "./view-logic.js";
+import { mayChangeVisibility, mayPlayClips, mayEditBlend } from "./voice-visibility.js";
+import { groupVoices, ownerLabel, mmss, fmtBytes, blendShares, blendSummary } from "./view-logic.js";
 import { PASSAGES, nextPassage, countdownStep, COUNTDOWN_S } from "./passages.js";
 import { loadPrefs, setPref } from "./prefs.js";
 import { avatarEl } from "./avatar.js";
@@ -40,6 +44,10 @@ let source = null;      // the Record / Upload switch in the New voice dialog
 let passage = 0;        // which PASSAGES entry the New voice dialog shows
 let clipPlaying = null; // {key, url} of the reference clip #clip-audio holds
 let clipSeq = 0; // bumped per clip request, so a slow fetch that lost the race is dropped
+let blendPlayer = null;
+let blendRows = [];     // the Blend voices dialog's rows: [{voice, weight}]
+let blendSeq = 0;       // bumped per save, so a slow sample can't play over a newer mix
+let blendOwner = null;  // ?owner= for the PUT when re-mixing another account's blend (admin)
 
 // Drop a cached sample and release its blob: an object URL pins the decoded audio until revoked.
 function dropSample(name) {
@@ -84,8 +92,10 @@ function voiceCard(state, v) {
   main.setAttribute("aria-pressed", String(v.name === selected));
   const meta = v.kind === "preset"
     ? v.description || "Built-in voice"
-    : ownerLabel(v, state.me) + " · " + v.clips + " clip" + (v.clips === 1 ? "" : "s") +
-      " · " + fmtSeconds(v.duration_s || 0);
+    : v.kind === "blend"
+      ? ownerLabel(v, state.me) + " · " + blendSummary(v)
+      : ownerLabel(v, state.me) + " · " + v.clips + " clip" + (v.clips === 1 ? "" : "s") +
+        " · " + fmtSeconds(v.duration_s || 0);
   const text = document.createElement("span");
   text.className = "vc-text";
   text.append(textEl("span", "vc-name", v.name), textEl("span", "vc-meta", meta));
@@ -213,6 +223,10 @@ async function select(state, name) {
     body.replaceChildren(textEl("p", "small", v.description || "A built-in voice."));
     return;
   }
+  if (v.kind === "blend") {
+    body.replaceChildren(mixSection(state, v));
+    return;
+  }
   body.replaceChildren(textEl("p", "small", "Loading clips…"));
   let clips;
   try { clips = await getJson("/v1/voices/" + encodeURIComponent(name) + "/clips"); }
@@ -259,6 +273,32 @@ function clipsSection(state, v, clips) {
   add.id = "vc-add-clip";
   add.addEventListener("click", () => openNewVoice(name));
   frag.append(textEl("h3", "section-title", clips.length + (clips.length === 1 ? " clip" : " clips")), ol, add);
+  return frag;
+}
+
+function mixSection(state, v) {
+  const frag = document.createDocumentFragment();
+  const ul = document.createElement("ul");
+  ul.className = "mix";
+  const shares = blendShares((v.blend || []).map((c) => c.weight));
+  (v.blend || []).forEach((c, i) => {
+    const li = document.createElement("li");
+    const bar = document.createElement("span");
+    bar.className = "bar";
+    const fill = document.createElement("i");
+    fill.style.width = shares[i] + "%";
+    bar.append(fill);
+    li.append(textEl("span", "", c.voice), textEl("span", "pct", shares[i] + "%"), bar);
+    ul.append(li);
+  });
+  frag.append(textEl("h3", "section-title", "Blended from"), ul);
+  if (mayEditBlend(v, state.me, state.admin)) {
+    const edit = textEl("button", "btn block", "Edit mix");
+    edit.type = "button";
+    edit.id = "vc-edit-mix";
+    edit.addEventListener("click", () => openBlend(state, v));
+    frag.append(edit);
+  }
   return frag;
 }
 
@@ -411,7 +451,9 @@ async function deleteClip(state, name, index) {
 async function deleteVoice(state, name) {
   const ok = await confirmDialog({
     title: "Delete “" + name + "”?",
-    body: "This removes the voice and all of its clips. It can't be undone.",
+    body: (state.voices.find((x) => x.name === name)?.kind === "blend"
+      ? "This removes the blended voice." : "This removes the voice and all of its clips.") +
+      " It can't be undone.",
     confirmLabel: "Delete voice", danger: true,
   });
   if (!ok) return;
@@ -554,6 +596,155 @@ async function addVoice(state, ev) {
   finally { $("nv-submit").disabled = false; }
 }
 
+// ---------------------------------------------------------------- Blend voices dialog
+
+const presetNames = (state) => state.voices.filter((v) => v.kind === "preset").map((v) => v.name);
+
+function renderBlendRows(state) {
+  const names = presetNames(state);
+  const rows = blendRows.map((row, i) => {
+    const div = document.createElement("div");
+    div.className = "blend-row";
+    const sel = document.createElement("select");
+    sel.className = "blend-voice";
+    sel.setAttribute("aria-label", "Voice " + (i + 1));
+    for (const n of names) {
+      const o = document.createElement("option");
+      o.value = n; o.textContent = n;
+      sel.append(o);
+    }
+    sel.value = row.voice;
+    sel.addEventListener("change", () => { row.voice = sel.value; });
+    const range = document.createElement("input");
+    range.type = "range"; range.min = "1"; range.max = "100"; range.step = "1";
+    range.className = "blend-weight";
+    range.value = String(row.weight);
+    range.setAttribute("aria-label", "Share of voice " + (i + 1));
+    range.addEventListener("input", () => { row.weight = Number(range.value); showShares(); });
+    const out = document.createElement("output");
+    out.className = "blend-share";
+    const del = textEl("button", "icon-btn danger", "✕");
+    del.type = "button";
+    del.setAttribute("aria-label", "Remove voice " + (i + 1));
+    del.hidden = blendRows.length <= 2;
+    del.addEventListener("click", () => { blendRows.splice(i, 1); renderBlendRows(state); });
+    div.append(sel, range, out, del);
+    return div;
+  });
+  $("blend-rows").replaceChildren(...rows);
+  $("blend-add").hidden = blendRows.length >= 3 || names.length <= blendRows.length;
+  showShares();
+}
+
+function showShares() {
+  const shares = blendShares(blendRows.map((r) => r.weight));
+  document.querySelectorAll("#blend-rows .blend-share").forEach((o, i) => { o.textContent = shares[i] + "%"; });
+}
+
+// `v`, when given, is an existing blend to re-mix: its name is fixed and its recipe preloaded.
+function openBlend(state, v = null) {
+  const names = presetNames(state);
+  $("blend-form").reset();
+  $("bv-submit").disabled = false; // a save cut short by closing the dialog never re-enabled it
+  setMsg($("blend-msg"), "", "");
+  blendPlayer.clear();
+  $("bv-player").hidden = true;
+  $("blend-name").readOnly = !!v;
+  // An admin editing someone else's blend names its owner, as PATCH does, so the PUT can't land
+  // on the admin's own voice of the same name instead.
+  blendOwner = v && v.owner && !(state.me && v.owner === state.me.email) ? v.owner : null;
+  $("blend-name").value = v ? v.name : "";
+  $("bv-title").textContent = v ? "Edit mix of " + v.name : "Blend voices";
+  blendRows = v
+    ? v.blend.map((c) => ({ voice: c.voice, weight: Math.max(1, Math.round(c.weight * 100)) }))
+    : names.slice(0, 2).map((n) => ({ voice: n, weight: 50 }));
+  // An unowned voice is always visible to everyone (see mayChangeVisibility), so the switch
+  // would change nothing there; it is hidden rather than offered.
+  $("blend-share-row").hidden = !!v && v.owner == null;
+  $("blend-share").checked = !!v && v.visibility === "shared";
+  renderBlendRows(state);
+  $("blend-voice").showModal();
+  (v ? $("bv-submit") : $("blend-name")).focus();
+}
+
+async function saveBlend(state, ev) {
+  ev.preventDefault();
+  const name = $("blend-name").value.trim();
+  if (!name) return setMsg($("blend-msg"), "Enter a name for the blend.", "err");
+  const voices = blendRows.map((r) => r.voice);
+  if (new Set(voices).size !== voices.length) {
+    return setMsg($("blend-msg"), "Pick a different built-in voice for each row.", "err");
+  }
+  // The PUT re-mixes whatever blend already has this name, so a new one must not quietly
+  // replace one of the caller's existing voices (a cloned one the server refuses anyway).
+  if (!$("blend-name").readOnly) {
+    const key = name.toLowerCase();
+    const clash = state.voices.find((x) => x.kind !== "preset" && x.name.toLowerCase() === key &&
+      state.me && x.owner === state.me.email);
+    if (clash && clash.kind === "blend") {
+      const ok = await confirmDialog({
+        title: "Replace the mix of “" + clash.name + "”?",
+        body: "You already have a blend with this name. Saving replaces its mix.",
+        confirmLabel: "Replace mix",
+      });
+      if (!ok) return;
+    } else if (clash) {
+      return setMsg($("blend-msg"), "You already have a cloned voice called “" + clash.name +
+        "”. Choose another name.", "err");
+    }
+  }
+  const body = { components: blendRows.map((r) => ({ voice: r.voice, weight: r.weight })) };
+  if (!$("blend-share-row").hidden) body.visibility = $("blend-share").checked ? "shared" : "private";
+  const seq = ++blendSeq;
+  $("bv-submit").disabled = true;
+  setMsg($("blend-msg"), "Saving and synthesizing a sample…", "info");
+  try {
+    const owner = blendOwner ? "?owner=" + encodeURIComponent(blendOwner) : "";
+    const res = await api("/v1/voices/" + encodeURIComponent(name) + "/blend" + owner, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    const info = await res.json();
+    if (seq !== blendSeq) { // closed (and maybe reopened on another voice) while this saved
+      dropSample(info.name);
+      await refreshVoices(state);
+      return;
+    }
+    // Saved: further saves re-mix this voice rather than starting another one.
+    $("blend-name").readOnly = true;
+    $("blend-name").value = info.name;
+    $("bv-title").textContent = "Edit mix of " + info.name;
+    dropSample(info.name);
+    await refreshVoices(state);
+    if (selected === info.name) await select(state, info.name);
+    const url = await sampleUrl(info.name);
+    if (seq !== blendSeq || !$("blend-voice").open) return;
+    $("bv-player").hidden = false;
+    $("sample-audio").pause();
+    detailPlayer.pause();
+    await blendPlayer.load(url, { autoplay: true });
+    setMsg($("blend-msg"), (res.status === 201 ? "Created " : "Saved ") + info.name +
+      " — playing a sample. Adjust and save again, or close when it sounds right.", "ok");
+  } catch (e) { if (seq === blendSeq) setMsg($("blend-msg"), e.message, "err"); }
+  finally { if (seq === blendSeq) $("bv-submit").disabled = false; }
+}
+
+function initBlend(state) {
+  blendPlayer = createPlayer($("bv-player"), $("bv-audio"));
+  $("blend-voice-btn").addEventListener("click", () => openBlend(state));
+  $("blend-add").addEventListener("click", () => {
+    const used = new Set(blendRows.map((r) => r.voice));
+    const next = presetNames(state).find((n) => !used.has(n));
+    if (!next || blendRows.length >= 3) return;
+    blendRows.push({ voice: next, weight: 30 });
+    renderBlendRows(state);
+  });
+  $("blend-form").addEventListener("submit", (ev) => saveBlend(state, ev));
+  $("bv-cancel").addEventListener("click", () => $("blend-voice").close());
+  $("bv-close").addEventListener("click", () => $("blend-voice").close());
+  $("blend-voice").addEventListener("close", () => { blendSeq++; blendPlayer.pause(); });
+  $("bv-audio").addEventListener("play", () => { $("sample-audio").pause(); $("vc-audio").pause(); });
+}
+
 // ---------------------------------------------------------------- init
 
 export async function initVoices(state) {
@@ -566,6 +757,7 @@ export async function initVoices(state) {
   for (const e of ["play", "pause", "ended", "emptied"]) $("clip-audio").addEventListener(e, markClips);
   for (const e of ["play", "pause", "ended", "emptied"]) $("sample-audio").addEventListener(e, markPlaying);
   $("new-voice-btn").addEventListener("click", () => openNewVoice());
+  initBlend(state);
   $("voice-search").addEventListener("input", (ev) => { query = ev.target.value; renderList(state); });
   $("vc-rename").addEventListener("click", () => { if (selected) rename(state, selected); });
   $("vc-delete").addEventListener("click", () => { if (selected) deleteVoice(state, selected); });

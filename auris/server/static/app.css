@@ -411,8 +411,8 @@ dialog.modal p { color:var(--fg2); }
   .card-grid { grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
   .voice-card { padding:12px; }
   .vc-main { grid-template-columns:minmax(0,1fr); }
-  .head-actions { width:100%; }
-  .head-actions .search { flex:1 1 auto; }
+  .head-actions { width:100%; flex-wrap:wrap; }
+  .head-actions .search { flex:1 1 100%; }
   .search input { width:100%; }
   /* the detail panel becomes a bottom sheet — same DOM, positioned here */
   .detail { position:fixed; top:auto; left:0; right:0; bottom:0; z-index:40; max-height:82vh;
@@ -505,4 +505,19 @@ textarea.big-text:focus, textarea.big-text:hover { border:0; box-shadow:none; }
 .status-cell { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
 @media (max-width:720px) {
   #users-table th:nth-child(2), #users-table td:nth-child(2) { display:none; }
+}
+
+/* ---------- blended voices ---------- */
+.blend-rows { display:grid; gap:10px; }
+.blend-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) 44px 32px; align-items:center; gap:10px; }
+.blend-row output { text-align:right; font-variant-numeric:tabular-nums; color:var(--fg); }
+#blend-add { justify-self:start; }
+.mix { display:grid; gap:10px; margin:0; padding:0; list-style:none; }
+.mix li { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 10px; }
+.mix .pct { font-variant-numeric:tabular-nums; color:var(--fg2); }
+.mix .bar { grid-column:1 / -1; height:6px; border-radius:3px; background:var(--raise); overflow:hidden; }
+.mix .bar i { display:block; height:100%; background:var(--a1); }
+@media (max-width:480px) {
+  .blend-row { grid-template-columns:minmax(0,1fr) 44px 32px; }
+  .blend-row select { grid-column:1 / -1; }
 }

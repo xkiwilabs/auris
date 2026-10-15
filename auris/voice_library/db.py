@@ -96,6 +96,10 @@ async def migrate(conn: aiosqlite.Connection) -> None:
         )
         await conn.execute("UPDATE speakers SET visibility = 'shared'")
         await conn.commit()
+    if "blend" not in speaker_columns:
+        # A blended voice's recipe (voice_library/blends.py), JSON; NULL for a cloned voice.
+        await conn.execute("ALTER TABLE speakers ADD COLUMN blend TEXT")
+        await conn.commit()
     # Unconditional, not part of the branch above: an earlier commit of the ownership work
     # defaulted every new row to 'private', so a box that cloned a voice on the box (no owner
     # to attribute it to) already holds an unowned 'private' row — and that branch will never

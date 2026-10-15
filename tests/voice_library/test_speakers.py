@@ -71,7 +71,7 @@ async def test_stats_and_delete(tmp_path):
 
     stats = await speakers.list_visible_with_stats(conn, None)
     # Unowned, so 'shared' — see speakers.UNOWNED_IS_ALWAYS_SHARED.
-    assert stats == [("Me", 2, 5.0, "f5_tts", None, "shared")]
+    assert stats == [("Me", 2, 5.0, "f5_tts", None, "shared", None)]
 
     await speakers.delete_speaker(conn, sp.id)
     assert await speakers.get_speaker_by_name_and_owner(conn, "Me", None) is None

@@ -195,7 +195,7 @@ function syncVoices(state) {
   sel.innerHTML = "";
   for (const v of usableVoices(state.voices, state.me, state.admin && loadPrefs().showOthers)) {
     const o = document.createElement("option");
-    o.value = v.name; o.textContent = v.kind === "preset" ? v.name + "  (preset)" : v.name;
+    o.value = v.name; o.textContent = v.kind === "preset" || v.kind === "blend" ? v.name + "  (" + v.kind + ")" : v.name;
     sel.appendChild(o);
   }
   if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;

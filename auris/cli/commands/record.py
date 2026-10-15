@@ -13,7 +13,7 @@ from auris.audio.transcribe import transcribe_reference
 from auris.client.api import ClientError
 from auris.client.mode import remote_client
 from auris.config import Settings, load_settings
-from auris.voice_library import cloning, db
+from auris.voice_library import cloning, db, speakers
 
 # Default passage to read — phonetically rich for good coverage. Shown as guidance only:
 # the transcript now comes from transcribing the actual recording, so you can say anything.
@@ -44,6 +44,19 @@ async def _persist(
         await conn.close()
 
 
+async def _refuse_blend(settings: Settings, name: str) -> None:
+    """ValueError if `name` is a blended voice in the operator's own namespace — the one
+    `_persist` would append to — so nobody records 12 seconds only to have them refused."""
+    conn = await db.connect(settings.db_path)
+    try:
+        await db.create_tables(conn)
+        existing = await speakers.get_speaker_by_name_and_owner(conn, name, None)
+        if existing is not None:
+            await speakers.refuse_if_blend(conn, existing.id)
+    finally:
+        await conn.close()
+
+
 def record(
     speaker: str = typer.Argument(..., help="Speaker name (created if it doesn't exist)"),
     seconds: float = typer.Option(
@@ -69,6 +82,12 @@ def record(
     The recording is transcribed automatically, so the stored transcript always matches
     what you actually said — read the passage, or pass --free and say anything."""
     settings = load_settings()
+    if remote_client() is None:  # the service refuses this itself, before any decode
+        try:
+            asyncio.run(_refuse_blend(settings, speaker))
+        except ValueError as exc:  # don't ask for a recording that can't be stored
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1)
     if free:
         typer.echo(f"Free-form mode — speak naturally for {seconds:.0f}s. Say whatever you like.\n")
     else:
@@ -123,5 +142,9 @@ def record(
         typer.echo(f"note: {warning}", err=True)
     audio, transcript = clip.audio, clip.transcript
 
-    name, index = asyncio.run(_persist(settings, speaker, audio, transcript))
+    try:
+        name, index = asyncio.run(_persist(settings, speaker, audio, transcript))
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1)
     typer.echo(f"Recorded and cloned {name}: stored clip_{index:03d}.wav")

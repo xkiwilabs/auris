@@ -94,6 +94,16 @@ class ServiceClient:
         r = self._http.patch(f"/v1/voices/{self._segment(name)}", json=body, params=params)
         return self._check(r).json()
 
+    def put_blend(
+        self, name: str, components: list[tuple[str, float]], visibility: str | None = None
+    ) -> dict:
+        """PUT a blend recipe: create the caller's blended voice `name`, or re-mix it."""
+        body: dict = {"components": [{"voice": v, "weight": w} for v, w in components]}
+        if visibility is not None:
+            body["visibility"] = visibility
+        r = self._http.put(f"/v1/voices/{self._segment(name)}/blend", json=body)
+        return self._check(r).json()
+
     def clone(
         self,
         name: str,

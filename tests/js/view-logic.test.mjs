@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  groupVoices, usableVoices, ownerLabel, charState, userStatus, accepts, mmss, fmtBytes, fmtDate, relTime,
+  groupVoices, usableVoices, ownerLabel, blendShares, blendSummary, charState, userStatus, accepts, mmss, fmtBytes, fmtDate, relTime,
 } from "../../auris/server/static/js/view-logic.js";
 
 const voices = [
@@ -117,4 +117,21 @@ test("relTime is coarse and falls back to a date after a week", () => {
   assert.equal(relTime(ago(2 * 86400), now), "2 d ago");
   assert.equal(relTime(ago(30 * 86400), now), fmtDate(ago(30 * 86400)));
   assert.equal(relTime(ago(-60), now), "just now"); // clock skew: never "in the future"
+});
+
+test("blendShares gives whole percentages that always add up to 100", () => {
+  assert.deepEqual(blendShares([60, 40]), [60, 40]);
+  assert.deepEqual(blendShares([0.6, 0.4]), [60, 40]); // a stored recipe's fractions
+  assert.deepEqual(blendShares([1, 1, 1]), [34, 33, 33]); // never 33 + 33 + 33
+  assert.deepEqual(blendShares([50, 50, 0]), [50, 50, 0]);
+  assert.deepEqual(blendShares([0, 0]), [50, 50]); // no weight yet: an even split
+  assert.deepEqual(blendShares([]), []);
+  for (const w of [[7, 3, 1], [99, 1], [2, 2, 3]]) {
+    assert.equal(blendShares(w).reduce((a, b) => a + b, 0), 100);
+  }
+});
+
+test("blendSummary names the voices a blend mixes", () => {
+  const v = { blend: [{ voice: "narrator-uk-f", weight: 0.6 }, { voice: "bright-uk-f", weight: 0.4 }] };
+  assert.equal(blendSummary(v), "blend of narrator-uk-f + bright-uk-f");
 });

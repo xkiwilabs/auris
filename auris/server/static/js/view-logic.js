@@ -34,6 +34,25 @@ export function usableVoices(voices, me, showOthers) {
   return voices.filter((v) => showOthers || section(v, me) !== "others");
 }
 
+// Whole-number percentages for a blend's weights that always add up to 100 (largest remainder),
+// so the sliders' read-outs never show 33 + 33 + 33. All-zero weights read as an even split.
+export function blendShares(weights) {
+  const w = weights.map((x) => (Number.isFinite(x) && x > 0 ? x : 0));
+  const total = w.reduce((a, b) => a + b, 0);
+  if (!w.length) return [];
+  const exact = w.map((x) => (total ? (x / total) * 100 : 100 / w.length));
+  const out = exact.map(Math.floor);
+  let left = 100 - out.reduce((a, b) => a + b, 0);
+  const order = exact.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  for (const [, i] of order) { if (left <= 0) break; out[i] += 1; left -= 1; }
+  return out;
+}
+
+// The voice names a blend mixes, for a card's one-line summary.
+export function blendSummary(voice) {
+  return "blend of " + (voice.blend || []).map((c) => c.voice).join(" + ");
+}
+
 export function ownerLabel(voice, me) {
   if (voice.owner == null) return "No owner";
   if (me && me.email && voice.owner === me.email) return "You";

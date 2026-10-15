@@ -24,6 +24,9 @@ auris --help
 - **Preset voice** — a built-in voice (Kokoro) you can use **without cloning**, by passing its
   name (e.g. `narrator-uk-f`, `calm-m`) anywhere a speaker name is accepted. Run `auris voices`
   to list them. Preset names are reserved.
+- **Blended voice** — a mix of 2–3 preset voices at chosen weights (e.g. 60 % `narrator-uk-f` +
+  40 % `bright-uk-f`), saved under its own name and usable anywhere a speaker name is. Only presets
+  can be blended. See [`auris voices blend`](#blended-voices).
 - **Model** — the engine. auris uses **f5-TTS** for cloning (weights **CC-BY-NC**, fine for
   research/personal use) and **Kokoro** (Apache-2.0) for the preset voices. The voice name picks
   the engine automatically. Kokoro needs the `kokoro` extra + **espeak-ng** (see getting-started).
@@ -34,7 +37,8 @@ Audio is handled internally as mono, 24 kHz. Output is written as WAV.
 
 ## `auris voices`
 
-List available voices: built-in **presets** (usable now, no cloning) and your **cloned** speakers.
+List available voices: built-in **presets** (usable now, no cloning), your **cloned** speakers and
+any **blended** voices.
 
 ```bash
 auris voices
@@ -92,6 +96,32 @@ argument.
 This only concerns the HTTP service — a single-user local install has no accounts, so every voice
 it creates is unowned and every voice it can see, it can use. For creating dashboard accounts and
 the full ownership/visibility model, see [accounts.md](accounts.md).
+
+### Blended voices
+
+Mix two or three built-in voices into a new one. Kokoro voices are vectors, so a weighted average
+of two is a genuine in-between voice rather than a switch between them:
+
+```bash
+auris voices blend warm-narrator narrator-uk-f=60 bright-uk-f=40
+auris voices blend warm-narrator narrator-uk-f=1 deep-uk-m=1    # re-mix it (50/50)
+auris tts warm-narrator --text "Hello from a blend." --out hello.wav
+```
+
+- Weights are any positive numbers; they are scaled to add up to 100 %.
+- The accent (US or UK pronunciation) follows the heaviest voice; a tie goes to the first listed.
+- Running it again on the same name re-mixes that blend. A cloned voice can't become a blend, and
+  a blend can't take clips.
+- In remote mode the blend is created on the service, private to you; add `--share` to make it
+  visible to every account (or `--private` to take that back on a re-mix). On the box it is
+  unowned, like `auris clone`'s voices, so visible to all.
+- Only presets can be blended. A cloned voice is a recording plus its transcript, and averaging
+  two recordings doesn't give an in-between voice.
+- The recipe keeps each preset's underlying Kokoro voice, so a blend keeps its sound even if a
+  preset name is later pointed at a different voice.
+
+`auris voices` lists a blend with its recipe (`blend: 60% narrator-uk-f + 40% bright-uk-f`).
+`auris voices refit` skips blends, since they have no recording to test.
 
 ---
 

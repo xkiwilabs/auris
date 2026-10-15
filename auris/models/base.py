@@ -22,10 +22,14 @@ class PreparedReference:
 class PresetVoice:
     """Conditioning for a preset-voice model: a built-in voice id (e.g. 'af_heart').
 
-    lang_code selects the model's G2P front-end (Kokoro: 'a' = US English, 'b' = UK English)."""
+    lang_code selects the model's G2P front-end (Kokoro: 'a' = US English, 'b' = UK English).
+    `mix`, when set, makes this a blend: (voice_id, weight) pairs, weights summing to 1, which
+    the model averages into one voice (voice_library/blends.py); voice_id is then the heaviest
+    component, kept so anything that only reads voice_id still names a real voice."""
 
     voice_id: str
     lang_code: str
+    mix: tuple[tuple[str, float], ...] = ()
 
 
 # Either an in-context cloning reference (f5-TTS) or a built-in preset voice (Kokoro).

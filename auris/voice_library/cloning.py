@@ -47,6 +47,7 @@ async def add_reference(
     """Persist a reference clip (audio file + db row with transcript) for a speaker.
 
     Returns the clip index. Shared by the `clone` (file) and `record` (mic) commands."""
+    await speakers.refuse_if_blend(conn, speaker_id)  # before the WAV is written, not after
     index = storage.next_clip_index(voices_dir, speaker_id)
     path = storage.store_clip(voices_dir, speaker_id, audio, sample_rate, index)
     await speakers.add_clip(

@@ -21,15 +21,28 @@ class SpeechRequest(BaseModel):  # OpenAI /v1/audio/speech
     owner: str | None = None  # disambiguates an ambiguous shared voice name, by owner's email
 
 
+class BlendComponent(BaseModel):
+    voice: str  # a built-in (preset) voice name
+    weight: float  # any positive number; a blend's weights are normalised to sum to 1
+
+
 class VoiceInfo(BaseModel):
     name: str
     clips: int
     duration_s: float
     default_model: str
-    kind: str = "cloned"  # "cloned" | "preset"
+    kind: str = "cloned"  # "cloned" | "preset" | "blend"
     description: str | None = None
     owner: str | None = None  # owner's email; None for presets and legacy (unowned) voices
     visibility: str | None = None  # "private" | "shared"; None for presets
+    blend: list[BlendComponent] | None = None  # a blend's recipe, weights summing to 1
+
+
+class BlendRequest(BaseModel):
+    """PUT /v1/voices/{name}/blend: create the caller's blend, or re-mix it."""
+
+    components: list[BlendComponent]
+    visibility: str | None = None  # None: private for a new blend, unchanged for an existing one
 
 
 class CloneResponse(BaseModel):

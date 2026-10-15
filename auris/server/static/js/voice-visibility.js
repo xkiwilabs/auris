@@ -22,3 +22,7 @@ export function mayPlayClips(voice, me, isAdmin) {
   if (voice.owner == null) return false;
   return !!me && !!me.email && voice.owner === me.email;
 }
+
+// Who may re-mix a blend: the same rule as every other change to a voice (viewer.may_mutate) —
+// its owner or an admin, and an unowned one admin-only.
+export const mayEditBlend = mayPlayClips;

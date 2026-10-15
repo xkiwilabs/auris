@@ -102,6 +102,7 @@
         <div class="head-actions">
           <label class="search"><span class="visually-hidden">Search voices</span>
             <input id="voice-search" type="search" placeholder="Search voices" autocomplete="off"></label>
+          <button type="button" id="blend-voice-btn" class="btn">Blend voices</button>
           <button type="button" id="new-voice-btn" class="btn primary">+ New voice</button>
         </div>
       </div>
@@ -450,6 +451,31 @@
     </form>
   </dialog>
 
+  <dialog id="blend-voice" class="modal wide" aria-labelledby="bv-title">
+    <form id="blend-form" autocomplete="off">
+      <div class="card-head">
+        <h2 id="bv-title">Blend voices</h2>
+        <button type="button" class="icon-btn" id="bv-close" aria-label="Close">✕</button>
+      </div>
+      <p class="small">Mix two or three built-in voices into a new one. Each slider sets that voice's
+        share of the mix; save to hear it, then adjust and save again until it sounds right.</p>
+      <label class="field"><span>Name</span>
+        <input id="blend-name" placeholder="e.g. warm-narrator" required></label>
+      <div id="blend-rows" class="blend-rows"></div>
+      <button type="button" id="blend-add" class="link-btn">+ Add a third voice</button>
+      <label class="switch-row" id="blend-share-row">
+        <span><b>Shared with everyone</b><small>Every signed-in account can use this voice.</small></span>
+        <input type="checkbox" id="blend-share" class="switch" role="switch">
+      </label>
+      <div id="bv-player" hidden></div>
+      <audio id="bv-audio"></audio>
+      <div id="blend-msg" class="msg"></div>
+      <div class="actions">
+        <button type="button" class="btn ghost" id="bv-cancel">Close</button>
+        <button type="submit" class="btn primary" id="bv-submit">Save and listen</button>
+      </div>
+    </form>
+  </dialog>
   <dialog id="dialog" class="modal" aria-labelledby="dialog-title">
     <form id="dialog-form" method="dialog">
       <h2 id="dialog-title"></h2>

@@ -36,6 +36,12 @@ async def load_reference_for_speaker(
 
 
 async def load_reference(conn, settings: Settings, name: str) -> SpeakerReference:
+    """`find_unscoped` + `load_reference_for_speaker`: the latest clip of the voice a bare name
+    means on the box."""
+    return await load_reference_for_speaker(conn, settings, await find_unscoped(conn, name))
+
+
+async def find_unscoped(conn, name: str) -> speakers.Speaker:
     """Unscoped lookup by name, for the local CLI with no `--owner` given.
 
     The operator has no account of their own, so an *unowned* voice with this name is the
@@ -68,7 +74,7 @@ async def load_reference(conn, settings: Settings, name: str) -> SpeakerReferenc
                 f"{len(matches)} voices are named {name!r}; pass --owner <email> to choose one",
                 owners=tuple(s.owner_id for s in matches),
             )
-    return await load_reference_for_speaker(conn, settings, speaker)
+    return speaker
 
 
 async def load_speaker_reference(settings: Settings, name: str) -> SpeakerReference:

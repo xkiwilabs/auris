@@ -5,7 +5,7 @@ from typing import NamedTuple
 from auris.config import Settings
 from auris.models.base import Conditioning, PresetVoice
 from auris.models.presets import PRESETS, PRESETS_BY_NAME
-from auris.voice_library import references, speakers
+from auris.voice_library import blends, references, speakers
 from auris.voice_library.exceptions import AmbiguousVoice
 from auris.voice_library.viewer import Viewer
 
@@ -13,7 +13,7 @@ from auris.voice_library.viewer import Viewer
 class Resolved(NamedTuple):
     model: str
     conditioning: Conditioning
-    kind: str  # "preset" | "cloned"
+    kind: str  # "preset" | "cloned" | "blend"
 
 
 _PRESET_NAMES_CI = {n.casefold() for n in PRESETS_BY_NAME}
@@ -102,10 +102,9 @@ async def resolve_voice(
             speaker = await speakers.get_speaker_by_name_and_owner(conn, name, owner)
             if speaker is None:
                 raise LookupError(f"voice {name!r} not found")
-            ref = await references.load_reference_for_speaker(conn, settings, speaker)
         else:
-            ref = await references.load_reference(conn, settings, name)
-        return Resolved(ref.default_model, ref.reference, "cloned")
+            speaker = await references.find_unscoped(conn, name)
+        return await _resolve_row(conn, settings, speaker)
     matches = await speakers.visible_speakers_by_name(conn, name, viewer)
     if owner is not None:
         matches = [s for s in matches if s.owner_id == owner]
@@ -133,7 +132,15 @@ async def resolve_voice(
             "pass owner=<email> to choose one",
             owners=owners,
         )
-    ref = await references.load_reference_for_speaker(conn, settings, chosen)
+    return await _resolve_row(conn, settings, chosen)
+
+
+async def _resolve_row(conn, settings: Settings, speaker: speakers.Speaker) -> Resolved:
+    """A found voice row → what synthesises it: a blend's mixed Kokoro voice, or a cloned
+    voice's latest reference clip."""
+    if speaker.is_blend:
+        return Resolved("kokoro", blends.from_json(speaker.blend).conditioning(), "blend")
+    ref = await references.load_reference_for_speaker(conn, settings, speaker)
     return Resolved(ref.default_model, ref.reference, "cloned")
 
 

@@ -16,8 +16,8 @@ from auris.server import voice_access
 from auris.server.asr_pool import TranscriptionJob
 from auris.server.deps import get_asr_pool, get_db, get_settings
 from auris.server.errors import BadAudio
-from auris.server.schemas import ClipInfo, CloneResponse, VoiceInfo, VoiceUpdate
-from auris.voice_library import cloning, storage, users
+from auris.server.schemas import BlendRequest, ClipInfo, CloneResponse, VoiceInfo, VoiceUpdate
+from auris.voice_library import blends, cloning, storage, users
 from auris.voice_library.exceptions import ClipNotFound
 from auris.voice_library.resolve import is_preset, preset_voice_rows
 
@@ -32,24 +32,65 @@ def _viewer(request: Request):
     return voice_access.viewer_for(request.state.principal)
 
 
+def _voice_info(name, clips, duration_s, model, owner_email, visibility, blend) -> VoiceInfo:
+    """One stored voice as the API shows it: cloned, or a blend with its recipe."""
+    mix = blends.from_json(blend) if blend else None
+    return VoiceInfo(
+        name=name,
+        clips=clips,
+        duration_s=duration_s,
+        default_model=model,
+        kind="blend" if mix else "cloned",
+        description=f"Blend: {mix.describe()}" if mix else None,
+        owner=owner_email,
+        visibility=visibility,
+        blend=mix.public() if mix else None,
+    )
+
+
 @router.get("/v1/voices", response_model=list[VoiceInfo])
 async def list_voices(request: Request, conn=Depends(get_db)):
     presets = [VoiceInfo(**row) for row in preset_voice_rows()]
     rows = await voice_access.list_voices(conn, _viewer(request))
-    emails = await users.emails_by_id(conn, {o for (*_, o, _v) in rows if o})
-    cloned = [
-        VoiceInfo(
-            name=n,
-            clips=c,
-            duration_s=d,
-            default_model=m,
-            kind="cloned",
-            owner=emails.get(o),
-            visibility=vis,
-        )
-        for (n, c, d, m, o, vis) in rows
-    ]
-    return presets + cloned
+    emails = await users.emails_by_id(conn, {r[4] for r in rows if r[4]})
+    stored = [_voice_info(n, c, d, m, emails.get(o), vis, b) for (n, c, d, m, o, vis, b) in rows]
+    return presets + stored
+
+
+@router.put("/v1/voices/{name}/blend", response_model=VoiceInfo)
+async def put_blend(
+    request: Request,
+    name: str,
+    body: BlendRequest,
+    response: Response,
+    owner: str | None = None,
+    conn=Depends(get_db),
+):
+    """Create (201) or re-mix (200) a blend of 2–3 built-in voices. `?owner=` re-mixes that
+    account's blend of this name, as it picks the voice for PATCH."""
+    if is_preset(name):
+        raise ValueError(f"{name!r} is a built-in preset name; choose a different voice name")
+    mix = blends.make([(c.voice, c.weight) for c in body.components])  # ValueError => 422
+    viewer = _viewer(request)
+    speaker, created = await voice_access.put_blend(
+        conn,
+        name,
+        viewer,
+        blends.to_json(mix),
+        body.visibility,
+        await voice_access.owner_id_for(conn, owner),
+    )
+    response.status_code = 201 if created else 200
+    emails = await users.emails_by_id(conn, {speaker.owner_id} if speaker.owner_id else set())
+    return _voice_info(
+        speaker.name,
+        0,
+        0.0,
+        speaker.default_model,
+        emails.get(speaker.owner_id),
+        speaker.visibility,
+        speaker.blend,
+    )
 
 
 @router.post("/v1/voices/{name}/clone", status_code=201, response_model=CloneResponse)
@@ -265,12 +306,12 @@ async def update_voice(
         speaker = await voice_access.rename(conn, speaker.id, body.name)  # NameTaken => 409
     clips = await voice_access.get_clips(conn, speaker.id)
     emails = await users.emails_by_id(conn, {speaker.owner_id} if speaker.owner_id else set())
-    return VoiceInfo(
-        name=speaker.name,
-        clips=len(clips),
-        duration_s=sum(c.duration_s or 0.0 for c in clips),
-        default_model=speaker.default_model,
-        kind="cloned",
-        owner=emails.get(speaker.owner_id),
-        visibility=speaker.visibility,
+    return _voice_info(
+        speaker.name,
+        len(clips),
+        sum(c.duration_s or 0.0 for c in clips),
+        speaker.default_model,
+        emails.get(speaker.owner_id),
+        speaker.visibility,
+        speaker.blend,
     )

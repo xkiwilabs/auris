@@ -70,6 +70,11 @@ class Speaker:
     default_speed: float
     owner_id: str | None = None
     visibility: str = PRIVATE
+    blend: str | None = None  # a blended voice's recipe (blends.to_json); None when cloned
+
+    @property
+    def is_blend(self) -> bool:
+        return self.blend is not None
 
 
 @dataclass
@@ -121,6 +126,7 @@ def _row(r) -> Speaker:
         r["default_speed"],
         r["owner_id"],
         r["visibility"],
+        r["blend"],
     )
 
 
@@ -131,6 +137,7 @@ async def create_speaker(
     default_speed: float = 1.0,
     owner_id: str | None = None,
     visibility: str | None = None,
+    blend: str | None = None,
 ) -> Speaker:
     """Insert a voice. `visibility` defaults per `default_visibility` and an unowned row may
     not be `private` — see `UNOWNED_IS_ALWAYS_SHARED`, the invariant every writer here holds.
@@ -149,10 +156,11 @@ async def create_speaker(
         default_speed,
         owner_id,
         visibility,
+        blend,
     )
     await conn.execute(
         "INSERT INTO speakers (id, name, created_at, default_model, default_speed, owner_id,"
-        " visibility) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        " visibility, blend) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             sp.id,
             sp.name,
@@ -161,10 +169,77 @@ async def create_speaker(
             sp.default_speed,
             sp.owner_id,
             sp.visibility,
+            sp.blend,
         ),
     )
     await conn.commit()
     return sp
+
+
+async def put_blend(
+    conn: aiosqlite.Connection,
+    name: str,
+    owner_id: str | None,
+    blend: str,
+    visibility: str | None = None,
+) -> tuple[Speaker, bool]:
+    """Create `owner_id`'s blended voice `name`, or re-mix it if it is already theirs.
+
+    Returns (speaker, created). Scoped to one owner's namespace on purpose — the same namespace
+    `auris clone` writes — so it can never touch another account's voice. The HTTP path picks
+    its target in server/voice_access.py instead, and calls `remix_blend` / `create_blend`.
+    """
+    existing = await get_speaker_by_name_and_owner(conn, name, owner_id)
+    if existing is not None:
+        return await remix_blend(conn, existing, blend, visibility), False
+    return await create_blend(conn, name, owner_id, blend, visibility), True
+
+
+async def remix_blend(
+    conn: aiosqlite.Connection, speaker: Speaker, blend: str, visibility: str | None = None
+) -> Speaker:
+    """Replace a blend's recipe (and, if given, its visibility). A cloned voice is refused
+    (ValueError): it has recordings, not a recipe, and converting it would orphan them."""
+    if not speaker.is_blend:
+        raise ValueError(
+            f"{speaker.name!r} is a cloned voice, so it can't become a blend; choose another name"
+        )
+    if visibility is not None:
+        visibility = validate_visibility(visibility)
+        refuse_unowned_private(speaker.owner_id, visibility, speaker.name)
+    await conn.execute(
+        "UPDATE speakers SET blend = ?, visibility = COALESCE(?, visibility) WHERE id = ?",
+        (blend, visibility, speaker.id),
+    )
+    await conn.commit()
+    return await get_speaker_by_id(conn, speaker.id)
+
+
+async def create_blend(
+    conn: aiosqlite.Connection,
+    name: str,
+    owner_id: str | None,
+    blend: str,
+    visibility: str | None = None,
+) -> Speaker:
+    try:
+        return await create_speaker(
+            conn, name, "kokoro", owner_id=owner_id, visibility=visibility, blend=blend
+        )
+    except sqlite3.IntegrityError as exc:  # a concurrent create of the same name won the race
+        await conn.rollback()
+        raise NameTaken(f"a voice named {name.strip()!r} already exists") from exc
+
+
+async def refuse_if_blend(conn: aiosqlite.Connection, speaker_id: str) -> None:
+    """ValueError if this voice is a blend: it is a recipe, so a clip can never be added to it."""
+    cur = await conn.execute("SELECT name, blend FROM speakers WHERE id = ?", (speaker_id,))
+    row = await cur.fetchone()
+    if row is not None and row["blend"] is not None:
+        raise ValueError(
+            f"{row['name']!r} is a blended voice, so it has no recordings to add to; "
+            "clone into a different name"
+        )
 
 
 async def add_clip(
@@ -174,6 +249,7 @@ async def add_clip(
     transcript: str,
     duration_s: float | None,
 ) -> ReferenceClip:
+    await refuse_if_blend(conn, speaker_id)  # the backstop for every clone path
     clip = ReferenceClip(_uid(), speaker_id, filename, transcript, duration_s, _now())
     await conn.execute(
         "INSERT INTO reference_clips "
@@ -264,18 +340,28 @@ async def list_all(conn: aiosqlite.Connection) -> list[Speaker]:
 
 async def list_visible_with_stats(
     conn: aiosqlite.Connection, viewer: Viewer | None
-) -> list[tuple[str, int, float, str, str | None, str]]:
-    """(name, clips, duration_s, default_model, owner_id, visibility), name-sorted."""
+) -> list[tuple[str, int, float, str, str | None, str, str | None]]:
+    """(name, clips, duration_s, default_model, owner_id, visibility, blend), name-sorted.
+
+    `blend` is the recipe JSON for a blended voice and None for a cloned one."""
     where, params = _scope(viewer)
     cur = await conn.execute(
         "SELECT s.name, COUNT(c.id) AS clips, COALESCE(SUM(c.duration_s), 0.0) AS dur,"
-        " s.default_model, s.owner_id, s.visibility"
+        " s.default_model, s.owner_id, s.visibility, s.blend"
         " FROM speakers s LEFT JOIN reference_clips c ON c.speaker_id = s.id"
         f" WHERE ({where}) GROUP BY s.id ORDER BY s.name COLLATE NOCASE",
         params,
     )
     return [
-        (r["name"], r["clips"], float(r["dur"]), r["default_model"], r["owner_id"], r["visibility"])
+        (
+            r["name"],
+            r["clips"],
+            float(r["dur"]),
+            r["default_model"],
+            r["owner_id"],
+            r["visibility"],
+            r["blend"],
+        )
         for r in await cur.fetchall()
     ]
 

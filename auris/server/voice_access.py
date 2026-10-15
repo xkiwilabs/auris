@@ -43,7 +43,7 @@ async def owner_id_for(conn: aiosqlite.Connection, owner_email: str | None) -> s
 
 async def list_voices(
     conn: aiosqlite.Connection, viewer: Viewer
-) -> list[tuple[str, int, float, str, str | None, str]]:
+) -> list[tuple[str, int, float, str, str | None, str, str | None]]:
     return await speakers.list_visible_with_stats(conn, viewer)
 
 
@@ -148,6 +148,46 @@ async def find_for_clone(conn: aiosqlite.Connection, name: str, viewer: Viewer) 
     stays so `find_for_clone` is safe to call on its own, from a test or any future caller,
     without relying on the router to have checked first.
     """
+    existing = await _write_target(conn, name, viewer)
+    if existing is not None and existing.is_blend:  # ValueError → 422, before any audio work
+        raise ValueError(
+            f"{existing.name!r} is a blended voice, so it has no recordings to add to; "
+            "clone into a different name"
+        )
+    return existing
+
+
+async def put_blend(
+    conn: aiosqlite.Connection,
+    name: str,
+    viewer: Viewer,
+    blend: str,
+    visibility: str | None = None,
+    owner: str | None = None,
+) -> tuple[Speaker, bool]:
+    """Create or re-mix the blended voice `name`. Returns (speaker, created).
+
+    With `owner` (an owner id, from `?owner=`) it re-mixes exactly that account's voice, under
+    the same rules as PATCH (`get_for_write`: 404 for a voice the caller can't see, 403 for one
+    they can't change) — how an admin edits someone's blend when the name is held twice.
+    Without it, the target is found as for a clone (`find_for_clone`): the caller's own voice of
+    that name first, else a single visible one they may write, else a new voice in the
+    caller's own namespace — so another account's *private* voice is invisible and the caller
+    simply gets their own, while another account's *shared* one is Forbidden rather than
+    quietly shadowed. Unlike a clone, which always writes the caller's namespace, an admin's
+    blend re-mixes that single visible voice in place. A cloned target is refused (ValueError).
+    """
+    if owner is not None:
+        target = await get_for_write(conn, name, viewer, owner)
+        return await speakers.remix_blend(conn, target, blend, visibility), False
+    existing = await _write_target(conn, name, viewer)
+    if existing is not None:
+        return await speakers.remix_blend(conn, existing, blend, visibility), False
+    return await speakers.create_blend(conn, name, viewer.user_id, blend, visibility), True
+
+
+async def _write_target(conn: aiosqlite.Connection, name: str, viewer: Viewer) -> Speaker | None:
+    """The existing voice a clone or blend named `name` writes to; see `find_for_clone`."""
     refuse_if_ownerless(viewer)
     own = await speakers.get_speaker_by_name_and_owner(conn, name, viewer.user_id)
     if own is not None:

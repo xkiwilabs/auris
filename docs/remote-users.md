@@ -132,6 +132,11 @@ This is the easy way. No setup, no code.
      is already listening, then runs until you press stop (30 s at most): talk for 8–15 seconds in
      a few sentences. The clone keeps up to 10 s and ends it at a pause, so a word is never cut in
      half; if the clip came out short, or had no pause to cut in, a note under the voice says so.
+     **Blend voices** mixes two or three built-in voices into a new one of your own: pick the
+     voices, set each one's share with its slider, and press **Save and listen** — it saves and
+     plays a sample without closing, so you can adjust and save again until it sounds right. A
+     blend's panel shows its mix and an **Edit mix** button instead of clips; it is private until
+     you switch on **Shared with everyone**, like any voice you own.
    - **Synthesize** — type text, pick a voice, speed, **Full file** or **Stream**, and a format;
      **▶ Speak** (or Ctrl+Enter). The result plays in a waveform player with **⤓ Save**.
    - **Transcribe** — drop an audio file (or record from the mic — no 10-second cap here, that
@@ -268,8 +273,9 @@ directly:
 |--------|------|--------------|------|
 | `GET`  | `/` | the browser dashboard | no |
 | `GET`  | `/ready` | is the service up? | no |
-| `GET`  | `/v1/voices` | list voices (presets + cloned) | yes |
+| `GET`  | `/v1/voices` | list voices (presets, cloned and blends — a blend has `kind: "blend"` and its recipe in `blend`) | yes |
 | `POST` | `/v1/voices/{name}/clone` | add a voice (upload audio) | yes |
+| `PUT`  | `/v1/voices/{name}/blend` | create or re-mix a blend of 2–3 presets: `{"components": [{"voice": "narrator-uk-f", "weight": 60}, {"voice": "bright-uk-f", "weight": 40}], "visibility": "shared"}` (`visibility` optional; `?owner=<email>` picks which account's blend to re-mix when the name is held twice) — `201` created, `200` re-mixed | yes |
 | `DELETE` | `/v1/voices/{name}` | remove a cloned voice | yes |
 | `POST` | `/v1/tts` | generate speech (one file back) | yes |
 | `POST` | `/v1/tts/stream` | generate speech (streamed, low latency) | yes |

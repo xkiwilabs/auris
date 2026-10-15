@@ -118,6 +118,8 @@ recent clip.
 
 Two engines sit behind the same simple interface: **f5-TTS** does the voice **cloning**, and
 **Kokoro** provides the **built-in preset voices**. You never pick an engine — the voice name does.
+You can also **blend** two or three presets at chosen weights into a new voice of your own
+(`auris voices blend`, or **Blend voices** in the dashboard).
 
 ---
 
